@@ -5,7 +5,7 @@ module.exports = function() {
     // Gibt entweder ein richtiges Ergebnis zurück
     // oder Boolean False falls http Code nicht 200
     // oder schmeißt eine Exception, falls Timeout beispielsweise erreicht
-    module.makePostRequest = async function(hostname, port, path, bodyData, headerData) {
+    module.makeRequest = async function(hostname, port, path, bodyData, headerData, method) {
 
         // TODO: TIMEOUT FUNKTIONIERT AUS IRGEND EINEM GRUND NICHT
         return new Promise((resolve,reject) => {
@@ -14,7 +14,7 @@ module.exports = function() {
                 hostname: hostname,
                 port: port,
                 path: path,
-                method: 'POST',
+                method: method,
                 headers: {
                     ...headerData
                 },
@@ -39,11 +39,11 @@ module.exports = function() {
                     switch(res.headers['content-type']) {
                         // TODO: Was tun wenn der reponse text ist ?
                         case 'application/json; charset=utf-8':
-                            console.log("Circuit Breaker: Parse JSON Response");
+                            console.log("HTTP Client: Parse JSON Response");
                             resBody = JSON.parse(resBody);
                             break;
                     }
-                    console.log("Circuit Breaker: Post Request war erfolgreich!");
+                    console.log("HTTP Client: Post Request war erfolgreich!");
                     resolve(resBody);
                 })
             })

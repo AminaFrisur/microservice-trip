@@ -64,7 +64,7 @@ class CircuitBreaker {
     }
 
     // hostname = Loadbalancer der an die entsprechenden Microservices innerhalb der Fachlichkeit weiterleiten
-    async circuitBreakerPostRequest(path, bodyData, headerData) {
+    async circuitBreakerRequest(path, bodyData, headerData, httpMethod) {
 
         // Schritt 1: Berechne Abstand zwischen gespeicherten timeStamp und aktuellen timeStamp in Sekunden
          let timeDiff = ( new Date() - this.timestamp ) / 1000;
@@ -110,7 +110,7 @@ class CircuitBreaker {
             if(this.CircuitBreakerState == "HALF") {
                 this.requestCount++;
             }
-            let result = await httpClient.makePostRequest(this.hostname, this.port, path, bodyData, headerData);
+            let result = await httpClient.makeRequest(this.hostname, this.port, path, bodyData, headerData, httpMethod);
             this.successCount++;
             console.log("Circuit Breaker: Request war erfolgreich. Success Count ist jetzt bei " + this.successCount);
             return result;

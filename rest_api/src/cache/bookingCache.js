@@ -3,7 +3,7 @@ class BookingCache extends Cache {
 
     // prüfe ob das Token noch im Gültigkeitszeitraum liegt
     // wenn nicht dann muss ein neues Token vom Microservice Benutzerverwaltung angefordert werden
-    checkAndGetBookingInCache(loginName, authToken, buchungsNummer, circuitBreaker) {
+    async checkAndGetBookingInCache(loginName, authToken, buchungsNummer, circuitBreaker) {
         // User wurde gefunden, prüfe nun token und Timestamp vom token
         let index = this.getCacheEntryIndex("buchungsNummer", buchungsNummer);
         if(index >= 0) {
@@ -19,29 +19,31 @@ class BookingCache extends Cache {
             // Buchung ist nicht im cache
             // Also mache einen Request auf den Microservice Buchungsverwaltung
             let headerData = {
-                'Content-Type': 'application/json',
-                'auth_token:': authToken,
+                'auth_token': authToken,
                 'login_name': loginName
             };
             console.log("BookingCache: HeaderDaten = " + authToken + " und " + loginName)
-            let response = circuitBreaker.circuitBreakerPostRequest("/getBooking/" + buchungsNummer, "", headerData);
-            let booking = {
-                "buchungsNummer": response[0].buchungsNummer,
-                "buchungsDatum": response[0].buchungsDatum,
-                "loginName": response[0].loginName,
-                "fahrzeugId": response[0].fahrzeugId,
-                "dauerDerBuchung": response[0].dauerDerBuchung,
-                "preisNetto": response[0].preisNetto,
-                "status": response[0].status
+            let response = await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET");
+            console.log("BookingCache: response ist");
+            console.log(response);
+            if(response) {
+                let booking = {
+                    "buchungsNummer": response[0].buchungsNummer,
+                    "buchungsDatum": response[0].buchungsDatum,
+                    "loginName": response[0].loginName,
+                    "fahrzeugId": response[0].fahrzeugId,
+                    "dauerDerBuchung": response[0].dauerDerBuchung,
+                    "preisNetto": response[0].preisNetto,
+                    "status": response[0].status
+                }
+                // Wenn erfolgreich, speichere Buchung in den Cache
+                return {"booking": booking, "index": -1};
+            } else {
+                return false;
             }
-            // Wenn erfolgreich, speichere Buchung in den Cache
-            return {"booking": booking, "index": -1};
+
         }
 
-    }
-
-    getAllCacheEntrys() {
-        return this.cachedEntries;
     }
 
 }

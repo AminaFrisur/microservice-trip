@@ -119,6 +119,17 @@ class Cache {
         }
     }
 
+    removeFromCache(index) {
+        this.cachedEntries = [
+            ...this.cachedEntries.slice(0, index),
+            ...this.cachedEntries.slice(index + 1)
+        ]
+    }
+
+    getAllCacheEntrys() {
+        return this.cachedEntries;
+    }
+
 }
 
 module.exports = Cache

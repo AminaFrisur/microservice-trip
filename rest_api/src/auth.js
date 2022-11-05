@@ -21,7 +21,7 @@ module.exports = function() {
             let bodyData = {"login_name":loginName, "auth_token": authToken, "isAdmin": isAdmin};
             let headerData = { 'Content-Type': 'application/json'};
             try {
-                let loginData = await circuitBreaker.circuitBreakerPostRequest("/checkAuthUser", bodyData, headerData);
+                let loginData = await circuitBreaker.circuitBreakerRequest("/checkAuthUser", bodyData, headerData, "POST");
                 console.log("Authentification: Request checkAuthUser ergab folgendes Ergebnis: " + loginData);
                 // TODO: Mal überlegen ob das wirklich so RAW von der Benutzerverwaltung übergeben werden soll
                 if(loginData) {

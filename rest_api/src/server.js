@@ -4,14 +4,10 @@
 // TODO: Eventuell sollte die Fuhrparkverwaltung die Kommandos von Fahrzeugen übernehmen -> generell mal überlegen wie das genau gemacht werden soll -> ansonsten einfach weglassen
 
 
-
 const express = require('express');
 const bodyParser = require('body-parser');
 var jsonBodyParser = bodyParser.json({ type: 'application/json' });
-// Constants
-const PORT = 8000;
-const HOST = '0.0.0.0';
-const mongoose = require('mongoose');
+
 
 // Erstelle einen Cache um Token zwischenzuspeichern
 var UserCache = require('./cache/userCache.js');
@@ -21,6 +17,9 @@ var userCacheInstance = new UserCache(10000, 10000);
 var bookingCacheInstance = new BookingCache(10000, 10000);
 
 let auth = require('./auth.js')();
+
+const PORT = 8000;
+const HOST = '0.0.0.0';
 
 var CircuitBreaker = require('./circuitBreaker.js');
 var circuitBreakerBenutzerverwaltung = new CircuitBreaker(150, 30, 0, -3,
@@ -35,32 +34,24 @@ const middlerwareWrapperLogin = (cache, isAdmin, circuitBreaker) => {
     }
 }
 
-mongoose.Promise = global.Promise;
-const dbconfig = {
-    url: 'mongodb://router-01-buchungsverwaltung/backend',
-}
-
-const preisTabelle = {
-  "SUV": 80,
-  "Kleinwagen": 60,
-  "Coupe": 70,
-  "Transporter": 100,
-  "Kombi": 80
-};
-
 function checkParams(req, res, requiredParams) {
     console.log("checkParams", requiredParams);
     let paramsToReturn = {};
     for (let i = 0; i < requiredParams.length; i++) {
             let param = requiredParams[i];
             
-        if (!(req.query && param in req.query)
+        if (!(req.headers && param in req.headers)
+            && !(req.query && param in req.query)
             && !(req.body && param in req.body)
             && !(req.params && param in req.params)) {
             let error = "error parameter " + param + " is missing";
             console.log(error);
             throw error;
             return;
+        }
+
+        if (req.headers && param in req.headers) {
+            paramsToReturn[param] = req.headers[param];
         }
 
         if (req.query && param in req.query) {
@@ -93,14 +84,22 @@ app.get('/getAllRunningTrips', [middlerwareWrapperLogin(userCacheInstance, true,
 // Wird vom Fahrzeug aufgerufen
 // Soll im Cache die aktuelle Postion speichern
 // In einem Bestimmten Abstand wird dieser Call vom Fahrzeug selbständig aufgerufen
-app.post('/updateVehicleLocation', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung, jsonBodyParser)], async function (req, res) {
+app.post('/updateVehicleLocation', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung), jsonBodyParser], async function (req, res) {
     try {
-        let params = checkParams(req, res,["buchungsNummer","longitude", "langtitud", "login_name", "auth_token"]);
-        let currentBooking = bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer)
-        currentBooking.booking.longitude = params.longitude;
-        currentBooking.booking.langtitud = params.langtitud;
-        bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
-        res.status(200).send("Fahrzeug Standort wurde aktualisiert");
+        let params = checkParams(req, res,["buchungsNummer", "longitude", "langtitude", "login_name", "auth_token"]);
+        console.log("PARAMETER SIND: ");
+        console.log(params);
+        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
+        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
+            currentBooking.booking.longitude = params.longitude;
+            currentBooking.booking.langtitude = params.langtitude;
+            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+            res.status(200).send("Fahrzeug Standort wurde aktualisiert");
+        } else {
+            throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
+        }
+
+
     } catch(err){
         console.log(err);
         res.status(401).send(err);
@@ -108,15 +107,20 @@ app.post('/updateVehicleLocation', [middlerwareWrapperLogin(userCacheInstance, f
 });
 
 // TODO: Schauen ob das überhaupt implementiert werden soll
-app.post('/sendVehicleCommand', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung, jsonBodyParser)], async function (req, res) {
+app.post('/sendVehicleCommand', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung), jsonBodyParser], async function (req, res) {
     try {
-        let params = checkParams(req, res,["buchungsNummer","fahrzeugId", "auth_token", "login_name", "Kommando"]);
-        let currentBooking = bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer)
+        let params = checkParams(req, res,["buchungsNummer", "auth_token", "login_name", "Kommando"]);
+        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
 
-        // TODO: Sende ein Vehicle Command
 
-        bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
-        res.status(200).send("Fahrzeug Kommando ausgeführt");
+        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
+            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+            // TODO: Mockup Request zu Fahrzeug
+            res.status(200).send("Fahrzeug Kommando ausgeführt");
+        } else {
+            throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
+        }
+
     } catch(err){
         console.log(err);
         res.status(401).send(err);
@@ -126,19 +130,27 @@ app.post('/sendVehicleCommand', [middlerwareWrapperLogin(userCacheInstance, fals
 // Starte den Trip
 // Rufe dazu die Buchungsverwaltung auf
 // Wenn Start Trip aufgerufen wird, sollte die Buchung in keinem Fall im Cache liegen !
-app.post('/startTrip', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung), jsonBodyParser], async function (req, res) {
+app.post('/startTrip/:buchungsNummer', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung)], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "login_name", "auth_token"]);
-        let currentBooking = bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer)
-        if(currentBooking.booking.status != "started" || currentBooking.booking.status != "ended") {
+        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
+        console.log(currentBooking);
+        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "paid") {
+            // let headerData = { 'Content-Type': 'application/json', 'auth_token': params.auth_token, 'login_name': params.login_name};
 
-            let headerData = { 'Content-Type': 'application/json', 'auth_token': params.auth_token, 'login_name': params.login_name};
+            let response = await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/startTrip/" + params.buchungsNummer, {}, {}, "POST");
+            if(response) {
+                currentBooking.booking.status = "started";
+                bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+                res.status(200).send("Trip wurde gestartet");
+            } else {
+                throw "Buchung konnte nicht gestartet werden !"
+            }
 
-            await circuitBreakerBuchungsverwaltung.circuitBreakerPostRequest("/startTrip/" + params.buchungsNummer, "", headerData);
-            currentBooking.booking.status = "started";
-            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+        } else {
+            throw "Buchung konnte nicht unter angegebener Buchungsnummer, Nutzername und dem Status started gefunden werden !"
         }
-        res.status(200).send("Trip wurde gestartet");
+
     } catch(err){
         console.log(err);
         res.status(401).send(err);
@@ -148,19 +160,20 @@ app.post('/startTrip', [middlerwareWrapperLogin(userCacheInstance, false, circui
 
 // Starte den Trip
 // Rufe dazu die Buchungsverwaltung auf
-app.post('/endTrip', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung), jsonBodyParser], async function (req, res) {
+app.post('/endTrip/:buchungsNummer', [middlerwareWrapperLogin(userCacheInstance, false, circuitBreakerBenutzerverwaltung)], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "login_name", "auth_token"]);
-        let currentBooking = bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer)
-        if(currentBooking.booking.status == "started") {
+        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
 
-            let headerData = { 'Content-Type': 'application/json', 'auth_token': params.auth_token, 'login_name': params.login_name};
+            // let headerData = { 'Content-Type': 'application/json', 'auth_token': params.auth_token, 'login_name': params.login_name};
 
-            await circuitBreakerBuchungsverwaltung.circuitBreakerPostRequest("/endTrip/" + params.buchungsNummer, "", headerData);
-            currentBooking.booking.status = "ended";
-            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+            await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/endTrip/" + params.buchungsNummer, {}, {}, "POST");
+            bookingCacheInstance.removeFromCache(currentBooking.index);
+        } else {
+            throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
         }
-        res.status(200).send("Trip wurde gestartet");
+        res.status(200).send("Trip wurde beendet");
 
     } catch(err){
         console.log(err);

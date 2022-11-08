@@ -12,7 +12,6 @@ export async function checkAuth(isAdmin, loginName, authToken, userCache, circui
         try {
             let loginData = await circuitBreaker.circuitBreakerRequest("/checkAuthUser", bodyData, headerData, "POST");
             console.log("Authentification: Request checkAuthUser ergab folgendes Ergebnis: " + loginData);
-            // TODO: Mal überlegen ob das wirklich so RAW von der Benutzerverwaltung übergeben werden soll
             if(loginData) {
                 var user = {
                     "loginName": loginName,
@@ -27,8 +26,8 @@ export async function checkAuth(isAdmin, loginName, authToken, userCache, circui
                 throw "token and/or login name are missing or are not valid";
             }
         } catch(e) {
-            console.log("Authentification: Reqeust schlug fehl ->" + e);
-            throw "Request zur Benutzerverwaltung schlug fehl!!";
+            console.log("Authentification: Authentifizierung des Nutzer schlug fehl -> " + e);
+            throw "Authentifizierung des Nutzer schlug fehl -> " + e;
         }
     } else {
         console.log("Authentification: Nutzer ist noch zwischengespeichert");

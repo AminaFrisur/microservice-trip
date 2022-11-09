@@ -10,9 +10,9 @@ export async function checkAuth(isAdmin, loginName, authToken, userCache, circui
         let bodyData = {"login_name":loginName, "auth_token": authToken, "isAdmin": isAdmin};
         let headerData = { 'Content-Type': 'application/json'};
         try {
-            let loginData = await circuitBreaker.circuitBreakerRequest("/checkAuthUser", bodyData, headerData, "POST");
+            let loginData = JSON.parse(await circuitBreaker.circuitBreakerRequest("/checkAuthUser", bodyData, headerData, "POST"));
             console.log("Authentification: Request checkAuthUser ergab folgendes Ergebnis: " + loginData);
-            if(loginData) {
+            if(loginData && loginData[0]) {
                 var user = {
                     "loginName": loginName,
                     "authToken": loginData[0].auth_token,

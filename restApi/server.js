@@ -86,6 +86,7 @@ const server = http.createServer(async (req, res) => {
             let params = checkParams(req, ["buchungsNummer", "longitude", "langtitude", "auth_token", "login_name"]);
             await checkAuth(true, params.login_name, params.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
             let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+            console.log(currentBooking.booking.status);
             if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
                 currentBooking.booking.longitude = params.longitude;
                 currentBooking.booking.langtitude = params.langtitude;
@@ -94,13 +95,15 @@ const server = http.createServer(async (req, res) => {
                 res.write("Fahrzeug Standort wurde aktualisiert");
                 res.end();
             } else {
-                throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
+                res.writeHead(401, { "Content-Type": "text/plain" });
+                res.write("Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !");
+                res.end();
             }
 
-
         } catch(err){
+            console.log(err);
             res.writeHead(401, { "Content-Type": "text/plain" });
-            res.write(err);
+            res.write("Microservice interner Fehler");
             res.end();
         }
 
@@ -110,6 +113,7 @@ const server = http.createServer(async (req, res) => {
             let params = checkParams(req, ["buchungsNummer", "auth_token", "login_name", "kommando"]);
             await checkAuth(true, params.login_name, params.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
             let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+            console.log(currentBooking);
             if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
                 bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
                 // TODO: Mockup Request zu Fahrzeug

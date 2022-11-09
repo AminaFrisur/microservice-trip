@@ -22,11 +22,8 @@ export default class BookingCache extends Cache {
                 'auth_token': authToken,
                 'login_name': loginName
             };
-            console.log("BookingCache: HeaderDaten = " + authToken + " und " + loginName)
-            let response = await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET");
-            console.log("BookingCache: response ist");
-            console.log(response);
-            if(response && response.length >= 1) {
+            let response = JSON.parse(await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET"));
+            if(response && response[0]) {
                 let booking = {
                     "buchungsNummer": response[0].buchungsNummer,
                     "buchungsDatum": response[0].buchungsDatum,
@@ -37,8 +34,10 @@ export default class BookingCache extends Cache {
                     "status": response[0].status
                 }
                 // Wenn erfolgreich, speichere Buchung in den Cache
+                console.log("Buchung konnte gefunden werden !");
                 return {"booking": booking, "index": -1};
             } else {
+                console.log("Bookingcache: Keine Buchung gefunden")
                 return false;
             }
 

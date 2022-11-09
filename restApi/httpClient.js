@@ -1,4 +1,4 @@
-// import {fetch} from "http";
+import {fetch} from "http";
 export async function  makeRequest(hostname, port, path, bodyData, headerData, method) {
 
         let parsedBodyData = null

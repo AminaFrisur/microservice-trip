@@ -14,7 +14,6 @@ async function parseJsonBody(req) {
                 json += chunk.toString('utf8');
             });
             req.on('end', function () {
-                console.log(json);
                 req["jsonBody"] = JSON.parse(json)
                 resolve()
             });
@@ -26,7 +25,6 @@ async function parseJsonBody(req) {
 
 // Checkparams Funktion
 function checkParams(req, requiredParams) {
-    console.log("checkParams", requiredParams);
     let paramsToReturn = {};
     for (let i = 0; i < requiredParams.length; i++) {
         let param = requiredParams[i];
@@ -35,7 +33,6 @@ function checkParams(req, requiredParams) {
             &&!(req.jsonBody && param in req.jsonBody))
         {
             let error = "error parameter " + param + " is missing";
-            console.log(error);
             throw error;
             return;
         }
@@ -72,9 +69,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === "/getAllRunningTrips" && req.method.toUpperCase() === "GET") {
         try {
-            let headerParams = checkParams(req, ["auth_token", "login_name"]);
-            console.log(headerParams);
-            await checkAuth(true, headerParams.login_name, headerParams.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
+            let params = checkParams(req, ["auth_token", "login_name"]);
+            await checkAuth(true, params.login_name, params.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
             let cacheEntrys = bookingCacheInstance.getAllCacheEntrys();
             res.writeHead(200, { "Content-Type": "application/json" });
             res.write(JSON.stringify(cacheEntrys));
@@ -86,44 +82,55 @@ const server = http.createServer(async (req, res) => {
     } else if(req.url === "/updateVehicleLocation" && req.method.toUpperCase() === "POST") {
         try {
 
-            let headerParams = checkParams(req, ["auth_token", "login_name"]);
-            await checkAuth(true, headerParams.login_name, headerParams.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
-            let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(headerParams.login_name, headerParams.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
+            await parseJsonBody(req);
+            let params = checkParams(req, ["buchungsNummer", "longitude", "langtitude", "auth_token", "login_name"]);
+            await checkAuth(true, params.login_name, params.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
+            let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
             if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
                 currentBooking.booking.longitude = params.longitude;
                 currentBooking.booking.langtitude = params.langtitude;
                 bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
-                res.status(200).send("Fahrzeug Standort wurde aktualisiert");
+                res.writeHead(200, { "Content-Type": "text/plain" });
+                res.write("Fahrzeug Standort wurde aktualisiert");
+                res.end();
             } else {
                 throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
             }
 
 
         } catch(err){
-            console.log(err);
-            res.status(401).send(err);
+            res.writeHead(401, { "Content-Type": "text/plain" });
+            res.write(err);
+            res.end();
         }
 
     } else if(req.url === "/sendVehicleCommand" && req.method.toUpperCase() === "POST") {
         try {
-            console.log("Start getAllRunningTrips");
-            await checkAuth(true, loginName, authToken, userCacheInstance, circuitBreakerBenutzerverwaltung);
-            let cacheEntrys = bookingCacheInstance.getAllCacheEntrys();
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.write(cacheEntrys);
-            res.end();
+            await parseJsonBody(req);
+            let params = checkParams(req, ["buchungsNummer", "auth_token", "login_name", "kommando"]);
+            await checkAuth(true, params.login_name, params.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
+            let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+            if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
+                bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+                // TODO: Mockup Request zu Fahrzeug
+                res.writeHead(200, {"Content-Type": "text/plain"});
+                res.write("Fahrzeug Kommando ausgeführt");
+                res.end();
+            } else {
+                throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
+            }
         } catch(err) {
-            res.writeHead(401, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ message: err }));
+            res.writeHead(401, { "Content-Type": "text/plain" });
+            res.end(err);
         }
 
     } else if(req.url.match(/\/startTrip\/([0-9]+)/) && req.method.toUpperCase() === "POST") {
         try {
             const buchungsNummer = req.url.split("/")[2];
+            console.log(buchungsNummer);
             let headerParams = checkParams(req, ["auth_token", "login_name"]);
             await checkAuth(false, headerParams.login_name, headerParams.auth_token, userCacheInstance, circuitBreakerBenutzerverwaltung);
             let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(headerParams.login_name, headerParams.auth_token, buchungsNummer, circuitBreakerBuchungsverwaltung);
-            console.log(currentBooking);
             if(currentBooking && currentBooking.booking && currentBooking.booking.status == "paid") {
                 // let headerData = { 'Content-Type': 'application/json', 'auth_token': params.auth_token, 'login_name': params.login_name};
 
@@ -135,15 +142,18 @@ const server = http.createServer(async (req, res) => {
                     res.write("Trip wurde gestartet");
                     res.end();
                 } else {
-                    throw "Buchung konnte nicht gestartet werden !"
+                    res.writeHead(401, { "Content-Type": "text/plain" });
+                    res.end("Buchung konnte nicht gestartet werden !");
                 }
 
             } else {
-                throw "Buchung konnte nicht unter angegebener Buchungsnummer, Nutzername und dem Status started gefunden werden !"
+                res.writeHead(401, { "Content-Type": "text/plain" });
+                res.end("Buchung konnte nicht unter angegebener Buchungsnummer, Nutzername und dem Status started gefunden werden !");
             }
-        } catch(err) {
-            res.writeHead(400, { "Content-Type": "text/plain" });
-            res.end(err);
+        } catch (err) {
+            console.log(err);
+            res.writeHead(401, { "Content-Type": "text/plain" });
+            res.end("Interner Fehler im Microservice aufgetreten");
         }
 
     } else if(req.url.match(/\/endTrip\/([0-9]+)/) && req.method.toUpperCase() === "POST") {
@@ -158,14 +168,16 @@ const server = http.createServer(async (req, res) => {
 
                 await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/endTrip/" + buchungsNummer, {}, {}, "POST");
                 bookingCacheInstance.removeFromCache(currentBooking.index);
+                res.writeHead(200, { "Content-Type": "text/plain" });
+                res.end("Trip wurde beendet");
             } else {
-                throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
+                res.writeHead(401, { "Content-Type": "text/plain" });
+                res.end("Buchung konnte nicht unter angegebener Buchungsnummer, Nutzername und dem Status started gefunden werden !");
             }
-            res.writeHead(200, { "Content-Type": "text/plain" });
-            res.end("Trip wurde beendet");
         } catch(err) {
+            console.log(err);
             res.writeHead(401, { "Content-Type": "text/plain" });
-            res.end(err);
+            res.end("Interner Fehler im Microservice aufgetreten");
         }
     }
 

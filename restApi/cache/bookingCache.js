@@ -26,7 +26,7 @@ export default class BookingCache extends Cache {
             let response = await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET");
             console.log("BookingCache: response ist");
             console.log(response);
-            if(response) {
+            if(response && response.length >= 1) {
                 let booking = {
                     "buchungsNummer": response[0].buchungsNummer,
                     "buchungsDatum": response[0].buchungsDatum,

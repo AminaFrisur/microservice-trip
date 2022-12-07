@@ -1,25 +1,10 @@
-class Cache {
+class BookingCache {
+
     cachedEntries;
     timestamp;
     cacheTime;
     maxSize;
 
-    // TODO: nicht das komplette Date speichern -> Viel zu speicher Intensiv
-
-    // TODO: AUch später unbedingt erklären warum ich Array als Datenstruktur genommen habe und nicht beispielsweise linked list oder so
-
-    // Cache Strategie:
-    // wenn checkToken erfolgreich -> speichere Nutzer, Token, Token Timestamp in cachedEntries
-    // Problem: Irgendwann läuft der Cache voll bzw. der Service ist mit der Datenmenge einfach überlastet
-    // Meine Cache Strategie:
-    // Jeder Cache Eintrag hat einen Timestamp
-    // Bei jeder Nutzung wird dieser aktualisiert
-    // Wenn der Timestamp dann älter ist als 5 Minuten -> schmeiße den Eintrag raus
-    // Speicherung des Caches: nach Login Name in geordneter Reihenfolge
-    // Ich nutze die Methode slice von Javascript array
-    // diese macht eine shallow Copy : Die Referenzen bleiben gleich
-
-    // cacheTime immer in Millisekunden angeben
     constructor(cacheTime, maxSize) {
         this.cachedEntries = new Array();
         this.timestamp = new Date();
@@ -130,6 +115,52 @@ class Cache {
         return this.cachedEntries;
     }
 
+
+    // prüfe ob das Token noch im Gültigkeitszeitraum liegt
+    // wenn nicht dann muss ein neues Token vom Microservice Benutzerverwaltung angefordert werden
+    async checkAndGetBookingInCache(loginName, authToken, buchungsNummer, circuitBreaker) {
+        // User wurde gefunden, prüfe nun token und Timestamp vom token
+        let index = this.getCacheEntryIndex("buchungsNummer", buchungsNummer);
+        if(index >= 0) {
+            if(loginName != this.cachedEntries[index].loginName) {
+                console.log("Cache Booking: übergebener LoginName entpricht nicht dem aus dem Cache");
+                console.log("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt");
+                throw "Zugriff auf die Buchung "+ buchungsNummer + " ist vom Nutzer "+ loginName + " nicht erlaubt!";
+            } else {
+                return {"booking": this.cachedEntries[index], "index": index};
+            }
+        } else {
+
+            // Buchung ist nicht im cache
+            // Also mache einen Request auf den Microservice Buchungsverwaltung
+            let headerData = {
+                'auth_token': authToken,
+                'login_name': loginName
+            };
+            console.log("BookingCache: HeaderDaten = " + authToken + " und " + loginName)
+            let response = await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET");
+            console.log("BookingCache: response ist");
+            console.log(response);
+            if(response && response.length > 0) {
+                let booking = {
+                    "buchungsNummer": response[0].buchungsNummer,
+                    "buchungsDatum": response[0].buchungsDatum,
+                    "loginName": response[0].loginName,
+                    "fahrzeugId": response[0].fahrzeugId,
+                    "dauerDerBuchung": response[0].dauerDerBuchung,
+                    "preisNetto": response[0].preisNetto,
+                    "status": response[0].status
+                }
+                // Wenn erfolgreich, speichere Buchung in den Cache
+                return {"booking": booking, "index": -1};
+            } else {
+                return false;
+            }
+
+        }
+
+    }
+
 }
 
-module.exports = Cache
+module.exports = BookingCache

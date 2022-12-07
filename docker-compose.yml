@@ -14,4 +14,44 @@ services:
     build: ./rest_api
     container_name: rest-api-trip1
     ports:
-      - 8003:8000
+      - 8013:8000
+    environment:
+      - BOOKINGPW=test
+      - BUCHUNGSVERWALTUNG=api-gateway-buchungsverwaltung
+
+  rest-api-trip2:
+    networks:
+      - service
+      - architecture
+    build: ./rest_api
+    container_name: rest-api-trip2
+    ports:
+      - 8014:8000
+    environment:
+      - BOOKINGPW=test
+      - BUCHUNGSVERWALTUNG=api-gateway-buchungsverwaltung
+
+  rest-api-trip3:
+    networks:
+      - service
+      - architecture
+    build: ./rest_api
+    container_name: rest-api-trip3
+    ports:
+      - 8015:8000
+    environment:
+      - BOOKINGPW=test
+      - BUCHUNGSVERWALTUNG=api-gateway-buchungsverwaltung
+
+  api-gateway-trip:
+    container_name: api-gateway-trip
+    build: ./api_gateway
+    networks:
+      - service
+      - architecture
+    ports:
+      - 8084:80
+    depends_on:
+      - rest-api-trip1
+      - rest-api-trip2
+      - rest-api-trip3

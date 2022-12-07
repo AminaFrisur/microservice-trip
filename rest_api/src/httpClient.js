@@ -2,12 +2,8 @@ const http = require("http");
 module.exports = function() {
     var module = {};
 
-    // Gibt entweder ein richtiges Ergebnis zurück
-    // oder Boolean False falls http Code nicht 200
-    // oder schmeißt eine Exception, falls Timeout beispielsweise erreicht
     module.makeRequest = async function(hostname, port, path, bodyData, headerData, method) {
 
-        // TODO: TIMEOUT FUNKTIONIERT AUS IRGEND EINEM GRUND NICHT
         return new Promise((resolve,reject) => {
 
             const options = {
@@ -37,7 +33,6 @@ module.exports = function() {
                     }
 
                     switch(res.headers['content-type']) {
-                        // TODO: Was tun wenn der reponse text ist ?
                         case 'application/json; charset=utf-8':
                             console.log("HTTP Client: Parse JSON Response");
                             resBody = JSON.parse(resBody);

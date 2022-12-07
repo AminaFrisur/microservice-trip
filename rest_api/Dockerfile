@@ -1,4 +1,4 @@
-FROM node:16.17.1-alpine
+FROM node:18.12.1-alpine
 LABEL description="Rest Api of Microservice Trip with Node"
 
 # Set working directory

@@ -11,17 +11,18 @@ pub struct Booking {
     buchungsDatum: String,
     loginName: String,
     fahrzeugId: i32,
+    dauerDerBuchung: i32,
     preisNetto: f32,
     status: String,
     cacheTimestamp: String
 }
 
 impl Booking {
-    pub fn new(buchungsNummer: i32, buchungsDatum: &str, loginName: DateTime<Utc>, fahrzeugId: i32, preisNetto: f32, status: &str, cacheTimestamp: DateTime<Utc>) -> Self {
+    pub fn new(buchungsNummer: i32, buchungsDatum: String, loginName: String, dauerDerBuchung: i32, fahrzeugId: i32, preisNetto: f32, status: String) -> Self {
 
-        return Self {buchungsNummer, buchungsDatum: buchungsDatum.to_string(),
-                     loginName: loginName.to_rfc3339(), fahrzeugId,preisNetto,
-                     status: status.to_string(), cacheTimestamp: cacheTimestamp.to_rfc3339()};
+        return Self {buchungsNummer, loginName, dauerDerBuchung,
+                    buchungsDatum, fahrzeugId, preisNetto,
+                     status, cacheTimestamp: Utc::now().to_rfc3339()};
     }
 
     pub fn print_login_name(&self) {
@@ -40,6 +41,13 @@ impl Cache   {
     pub fn new(max_size: i64, cache_time: i64) -> Self {
 
         return Self {cached_bookings: Arc::new(Mutex::new(Vec::new())), max_size, cache_time};
+    }
+
+    fn get_login_name(&self, index: usize) -> String {
+        let cached_bookings = self.cached_bookings.lock().unwrap();
+        let s: String = format!("{}", cached_bookings[index].loginName);
+        return s;
+
     }
 
     fn clear_cache(& mut self) -> Result<(), anyhow::Error> {
@@ -148,7 +156,7 @@ impl Cache   {
     }
 
 
-    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, mut circuit_breaker: CircuitBreaker<'_>) -> Result<(String, usize ),anyhow::Error> {
+    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: &mut CircuitBreaker<'_>) -> Result<(String, bool, usize ),anyhow::Error> {
         let mut booking_found = false;
         let booking_index = match self.get_cache_entry_index(buchungsnummer) {
             Ok(index) => {
@@ -160,15 +168,15 @@ impl Cache   {
             }
         };
 
-        let cached_bookings = self.cached_bookings.lock().unwrap();
         if booking_found {
-
-            if login_name != cached_bookings[booking_index].loginName {
+            let found_booking_login_name = self.get_login_name(booking_index);
+            if login_name != found_booking_login_name {
+                // let cached_bookings = self.cached_bookings.unlock().unwrap();
                 println!("Cache Booking: übergebener LoginName entpricht nicht dem aus dem Cache");
                 println!("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt");
                 return Err(anyhow!("Zugriff auf die Buchung nicht erlaubt!"));
             } else {
-                return Ok(("".to_string(), booking_index));
+                return Ok(("".to_string(), booking_found, booking_index));
             }
         } else {
             // Buchung ist nicht im cache
@@ -176,14 +184,14 @@ impl Cache   {
             println!("BookingCache: HeaderDaten = {} und  {}", login_name, auth_token);
 
             let response_json;
-
             let addr_with_params = format!("/getBooking/{}", buchungsnummer);
+            println!("{}", addr_with_params);
 
-            match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string()).await {
+            match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string()).await {
                 Ok((_, response_json_string)) =>  {
                     response_json = response_json_string;
                     println!("{:?}", response_json);
-                    return Ok((response_json, 0));
+                    return Ok((response_json, booking_found, 0));
                 },
                 Err(err) => return Err(err)
             }

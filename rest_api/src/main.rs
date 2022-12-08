@@ -14,36 +14,14 @@ use crate::cache::Cache;
 use crate::cache::Booking;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Buchung {
+pub struct Booking_Response {
     buchungsNummer: i32,
     buchungsDatum: String,
     loginName: String,
     fahrzeugId: i32,
+    dauerDerBuchung: String,
     preisNetto: f32,
-    status: String,
-    cacheTimestamp: f64
-}
-
-impl Buchung {
-    fn new(
-        buchungsNummer: i32,
-        buchungsDatum: String,
-        loginName: String,
-        fahrzeugId: i32,
-        preisNetto: f32,
-        status: String,
-        cacheTimestamp: f64
-    ) -> Self {
-        Self {
-            buchungsNummer,
-            buchungsDatum,
-            loginName,
-            fahrzeugId,
-            preisNetto,
-            status,
-            cacheTimestamp
-        }
-    }
+    status: String
 }
 
 pub fn regex_route(re: Regex, route: &str) -> String {
@@ -66,7 +44,7 @@ async fn handle_request_wrapper(cache: Cache, circuit_breaker: CircuitBreaker<'_
     }
 }
 
-async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: Request<Body>) -> Result<Response<Body>, anyhow::Error> {
+async fn handle_request(mut cache: Cache, mut circuit_breaker: CircuitBreaker<'_>, req: Request<Body>) -> Result<Response<Body>, anyhow::Error> {
 
     let mut login_name ="";
     let mut auth_token ="";
@@ -100,12 +78,12 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, true, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
             match cache.get_all_cache_entrys() {
                 Ok(cacheEntrys) => Ok(response_build(&serde_json::to_string(&cacheEntrys)?, 200 )),
-                Err(err) => return Ok(response_build(&format!("{}", err), 500)),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 500)),
             }
         }
 
@@ -114,7 +92,7 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
             let byte_stream = hyper::body::to_bytes(req).await?;
@@ -127,11 +105,13 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
 
-            let byte_stream = hyper::body::to_bytes(req).await?;
+
+            // let byte_stream = hyper::body::to_bytes(req).await?;
+            // let fahrzeug: Fahrzeug = serde_json::from_slice(&byte_stream)?;
 
 
             Ok(response_build("Fahrzeug Kommando ausgeführt", 200))
@@ -141,24 +121,50 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
+            // extrahiere die Buchungsnummer aus der URL
+            let buchungsnummer_string: String = regex_route.chars().filter(|c| c.is_digit(10)).collect();
+            let buchungsnummer: i32 = buchungsnummer_string.parse()?;
 
+            let addr_with_params: String = format!("/startTrip/{}", buchungsnummer);
 
+            let booking_res = cache.check_and_get_booking_in_cache(login_name, auth_token, buchungsnummer, &mut circuit_breaker).await?;
 
-            Ok(response_build("Trip wurde gestartet", 200))
+            let mut s = booking_res.0.replace("[", "");
+            s = s.replace("]", "");
+            println!("{}", s);
+            let current_booking: Booking_Response = serde_json::from_str(&s)?;
+
+            let dauerDerBuchung: i32 = current_booking.dauerDerBuchung.parse()?;
+
+            let cacheBooking: Booking = Booking::new(current_booking.buchungsNummer, current_booking.buchungsDatum,
+                                                     current_booking.loginName, dauerDerBuchung, current_booking.fahrzeugId,
+                                                     current_booking.preisNetto, current_booking.status);
+
+            cache.update_or_insert_cached_entrie(booking_res.1 , booking_res.2, cacheBooking)?;
+
+            // rufe CircuitBreaker auf
+            match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "POST".to_string()).await {
+                Ok(res) =>  Ok(response_build("Trip wurde beendet", 200)),
+                Err(err) => return  Ok(response_build("Trip konnte nicht gestartet werden", 401)),
+            }
         }
 
         (&Method::POST, "/endTrip/") => {
 
-            match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
-                Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
+            // extrahiere die Buchungsnummer aus der URL
+            let buchungsnummer_string: String = regex_route.chars().filter(|c| c.is_digit(10)).collect();
+            let buchungsnummer: i32 = buchungsnummer_string.parse()?;
+
+            let addr_with_params: String = format!("/endTrip/{}", buchungsnummer);
+
+            // rufe CircuitBreaker auf
+            match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "POST".to_string()).await {
+                Ok(res) =>  Ok(response_build("Trip wurde beendet", 200)),
+                Err(err) => return  Ok(response_build("Trip konnte nicht beendet werden", 401)),
             }
-
-
-            Ok(response_build("Trip wurde beendet", 200))
         }
 
         _ => {
@@ -168,8 +174,6 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
     }
 }
 
-// TODO: Prüfe ob wirklich gebraucht wird
-// CORS headers
 fn response_build(body: &str, status: u16) -> Response<Body> {
     Response::builder()
         .status(status)

@@ -2,11 +2,7 @@ use chrono::{DateTime, Utc};
 use anyhow::anyhow;
 #[path = "./client.rs"] mod client;
 use std::sync::{Arc, Mutex};
-// Warum kein RwLock:  -> the trait `Clone` is not implemented for `std::sync::RwLock<u64>`
-// use std::sync::RwLock;
 
-// Rust
-// struct + impl = "class"
 #[derive(Clone)]
 pub struct CircuitBreaker<'a> {
     circuit_breaker_state: Arc<std::sync::Mutex<&'a str>>,
@@ -46,7 +42,7 @@ impl <'a> CircuitBreaker<'a>  {
         }
     }
 
-    pub async fn circuit_breaker_post_request(&mut self, addr_with_params: String, login_name: String, auth_token: String) -> Result<(wasmedge_http_req::response::Response, String), anyhow::Error> {
+    pub async fn circuit_breaker_post_request(&mut self, addr_with_params: String, login_name: String, auth_token: String, http_method: String) -> Result<(wasmedge_http_req::response::Response, String), anyhow::Error> {
 
         println!("REST API: AKTUELLER CIRCUIT BREAKER STATUS IST: {}", self.get_circuit_breaker_state());
 
@@ -88,9 +84,7 @@ impl <'a> CircuitBreaker<'a>  {
             self.increment_request_count();
         }
 
-        // let url = format!("{}:{}{}", self.hostname, self.port, addr_with_params);
-
-        match client::make_post_request(self.hostname, self.port, addr_with_params, login_name, auth_token).await {
+        match client::make_request(self.hostname, self.port, addr_with_params, login_name, auth_token, http_method).await {
 
             Ok((res, response_json_string)) => {
                 self.increment_success_count();

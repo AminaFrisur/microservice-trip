@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use anyhow::anyhow;
 use std::sync::{Arc, Mutex};
-#[path = "./circuitBreaker.rs"] mod circuit_breaker;
+#[path = "./circuitbreaker.rs"] mod circuitbreaker;
+use crate::circuitbreaker::CircuitBreaker;
 
 #[derive(Clone)]
 pub struct Booking {
@@ -11,19 +12,19 @@ pub struct Booking {
     fahrzeugId: i32,
     preisNetto: f32,
     status: String,
-    cacheTimestamp: f64
+    cacheTimestamp: String
 }
 
 impl Booking {
-    pub fn new(buchungsNummer: &str, buchungsDatum: &str, loginName: DateTime<Utc>, fahrzeugId: i32, preisNetto: f32, status: &str, cacheTimestamp: f64) -> Self {
+    pub fn new(buchungsNummer: i32, buchungsDatum: &str, loginName: DateTime<Utc>, fahrzeugId: i32, preisNetto: f32, status: &str, cacheTimestamp: DateTime<Utc>) -> Self {
 
-        return Self {buchungsNummer: buchungsNummer.to_string(), buchungsDatum: buchungsDatum.to_string(),
+        return Self {buchungsNummer, buchungsDatum: buchungsDatum.to_string(),
                      loginName: loginName.to_rfc3339(), fahrzeugId,preisNetto,
-                     status: status.to_string(),cacheTimestamp};
+                     status: status.to_string(), cacheTimestamp: cacheTimestamp.to_rfc3339()};
     }
 
     pub fn print_login_name(&self) {
-        println!("CACHE LOGIN NAME: {}", self.login_name);
+        println!("CACHE LOGIN NAME: {}", self.loginName);
     }
 
 }
@@ -61,7 +62,7 @@ impl Cache   {
             // Falls im Cache nur ein Element ist
             if temp_index >= 1 {
 
-                let cached_booking_timestamp = DateTime::parse_from_rfc3339(&cached_bookings[temp_index - 1].cache_timestamp)?.with_timezone(&Utc);
+                let cached_booking_timestamp = DateTime::parse_from_rfc3339(&cached_bookings[temp_index - 1].cacheTimestamp)?.with_timezone(&Utc);
 
                 let time_diff = current_timestamp.signed_duration_since(cached_booking_timestamp).num_seconds();
 
@@ -91,24 +92,22 @@ impl Cache   {
     pub fn get_cache_entry_index(& mut self, buchungsNummer: i32) -> Result<usize, anyhow::Error> {
         self.clear_cache()?;
         let mut final_index: usize = 0;
-        let mut booking_found: bool = false;
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
         let mut booking_found = false;
 
         for i in 0..(cached_bookings.len()) {
             println!("{}", cached_bookings[i].buchungsNummer);
-            if cached_user[i].buchungsNummer == buchungsNummer {
+            if cached_bookings[i].buchungsNummer == buchungsNummer {
                 final_index = i;
                 // Auch beim Suchen eines Users -> Timestamp für Cache Eintrag aktualisieren
                 println!("Cache: Update Timestamp vom Cache Eintrag");
-                cached_user[i].cache_timestamp = Utc::now().to_rfc3339();
+                cached_bookings[i].cacheTimestamp = Utc::now().to_rfc3339();
                 booking_found = true;
                 break;
             }
         }
 
         if booking_found {
-            println!("Cache: Buchung Index ist: {} ", final_index);
             Ok(final_index)
         } else {
             Err(anyhow!("Cache: Buchung wurde im Cache nicht gefunden"))
@@ -116,25 +115,25 @@ impl Cache   {
 
     }
 
-    pub fn update_or_insert_cached_entrie(&self, index: usize, newCacheEntry: Booking) -> Result<(), anyhow::Error> {
+    pub fn update_or_insert_cached_entrie(&mut self, booking_found: bool, index: usize, newCacheEntry: Booking) -> Result<(), anyhow::Error> {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
 
-        if index >= 0  {
+        if booking_found {
             println!("Booking Cache: mache ein Update");
             cached_bookings.remove(index);
         }
         // Füge User neu im Cache hinzu, da nicht im cache vorhanden
         println!("Booking Cach: Füge Eintrag neu in Cache hinzu");
-        cached_user.push(Booking);
+        cached_bookings.push(newCacheEntry);
 
         Ok(())
     }
 
 
-    pub fn remove_from_cache(&self, index: usize) -> Result<(), anyhow::Error> {
+    pub fn remove_from_cache(&mut self, booking_found: bool, index: usize) -> Result<(), anyhow::Error> {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
 
-        if index >= 0  {
+        if booking_found  {
             println!("Booking Cache: Lösche Buchung aus dem Cache");
             cached_bookings.remove(index);
         }
@@ -142,32 +141,54 @@ impl Cache   {
         Ok(())
     }
 
-    pub fn get_all_cache_entrys(&self) -> Result<(Arc<std::sync::Mutex<Vec<Booking>>>), anyhow::Error> {
+    pub fn get_all_cache_entrys(&self) -> Result<Vec<Booking>, anyhow::Error> {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
-        Ok((cached_bookings))
+        Ok(cached_bookings.clone())
     }
 
 
-    pub fn check_and_get_booking_in_cache(&self, login_name: &str, buchungsnummer: i32, circuit_breaker: circuit_breaker) -> Result<(Booking, usize ),anyhow::Error> {
+    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, mut circuit_breaker: CircuitBreaker<'_>) -> Result<(String, usize ),anyhow::Error> {
+        let mut booking_found = false;
+        let booking_index = match self.get_cache_entry_index(buchungsnummer) {
+            Ok(index) => {
+                booking_found = true;
+                index
+            },
+            Err(_) => {
+                0
+            }
+        };
+
         let cached_bookings = self.cached_bookings.lock().unwrap();
-        let index = self.get_cache_entry_index(buchungsnummer);
-        if index >= 0 {
-            if login_name != self.cached_bookings[index].login_name {
+        if booking_found {
+
+            if login_name != cached_bookings[booking_index].loginName {
                 println!("Cache Booking: übergebener LoginName entpricht nicht dem aus dem Cache");
                 println!("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt");
-                Err("Zugriff auf Buchung ist vom aktuellen Nutzer nicht erlaubt")
+                return Err(anyhow!("Zugriff auf die Buchung nicht erlaubt!"));
             } else {
-                Ok((self.cached_bookings[index], index))
+                return Ok(("".to_string(), booking_index));
             }
         } else {
-            let headerData = {
+            // Buchung ist nicht im cache
+            // Also mache einen Request auf den Microservice Buchungsverwaltung
+            println!("BookingCache: HeaderDaten = {} und  {}", login_name, auth_token);
 
-            };
+            let response_json;
+
+            let addr_with_params = format!("/getBooking/{}", buchungsnummer);
+
+            match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string()).await {
+                Ok((_, response_json_string)) =>  {
+                    response_json = response_json_string;
+                    println!("{:?}", response_json);
+                    return Ok((response_json, 0));
+                },
+                Err(err) => return Err(err)
+            }
+
+
         }
-
-
-        // TODO:
-        Ok(true)
 
     }
 

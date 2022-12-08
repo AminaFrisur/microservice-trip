@@ -1,7 +1,5 @@
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, StatusCode, Server};
-pub use mysql_async::prelude::*;
-pub use mysql_async::*;
+use hyper::{Body, Method, Request, Response, Server};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::result::Result;
@@ -56,12 +54,12 @@ pub fn regex_route(re: Regex, route: &str) -> String {
     }
 }
 
-async fn handle_request_wrapper(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: Request<Body>, pool: Pool) -> Result<Response<Body>, anyhow::Error> {
+async fn handle_request_wrapper(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: Request<Body>) -> Result<Response<Body>, anyhow::Error> {
     match handle_request(cache, circuit_breaker, req).await {
         Ok(result) => Ok(result),
         Err(err) => {
             let error_message = format!("{:?}", err);
-            Ok(response_build_error(&error_message, 500))
+            Ok(response_build(&error_message, 500))
 
         }
     }
@@ -101,10 +99,10 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, true, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build_error(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
-            Ok(response_build(serde_json::to_string(&fahrzeug)?.as_str()))
+            Ok(response_build("OK", 200))
         }
 
 
@@ -112,81 +110,65 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build_error(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
             let byte_stream = hyper::body::to_bytes(req).await?;
-            let fahrzeug: Fahrzeug = serde_json::from_slice(&byte_stream)?;
+            //let fahrzeug: Fahrzeug = serde_json::from_slice(&byte_stream)?;
 
-            Ok(response_build("Fahrzeug Standort wurde aktualisiert"))
+            Ok(response_build("Fahrzeug Standort wurde aktualisiert",200))
         }
 
         (&Method::POST, "/sendVehicleCommand") => {
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build_error(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
 
             let byte_stream = hyper::body::to_bytes(req).await?;
 
 
-            Ok(response_build("Fahrzeug Kommando ausgeführt"))
+            Ok(response_build("Fahrzeug Kommando ausgeführt", 200))
         }
 
         (&Method::POST, "/startTrip/") => {
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build_error(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
 
 
 
-            Ok(response_build("Trip wurde gestartet"))
+            Ok(response_build("Trip wurde gestartet", 200))
         }
 
         (&Method::POST, "/endTrip/") => {
 
             match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
-                Err(err) => return Ok(response_build_error(&format!("{}", err), 401)),
+                Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
 
-
-
-            Ok(response_build("Trip wurde beendet"))
+            Ok(response_build("Trip wurde beendet", 200))
         }
 
         _ => {
             println!("REST API: ROUTE NOT FOUND");
-            let mut not_found = Response::default();
-            *not_found.status_mut() = StatusCode::NOT_FOUND;
-            Ok(not_found)
+            Ok(response_build("Route not found", 404))
         }
     }
 }
 
 // TODO: Prüfe ob wirklich gebraucht wird
 // CORS headers
-fn response_build(body: &str) -> Response<Body> {
-    Response::builder()
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        .header("Access-Control-Allow-Headers", "api,Keep-Alive,User-Agent,Content-Type")
-        .body(Body::from(body.to_owned()))
-        .unwrap()
-}
-
-fn response_build_error(body: &str, status: u16) -> Response<Body> {
+fn response_build(body: &str, status: u16) -> Response<Body> {
     Response::builder()
         .status(status)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        .header("Access-Control-Allow-Headers", "api,Keep-Alive,User-Agent,Content-Type")
         .body(Body::from(body.to_owned()))
         .unwrap()
 }
@@ -197,12 +179,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cache_booking = Cache::new(10000, 10000);
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     let make_svc = make_service_fn(|_| {
-        let circuit_breaker_buchungsverwaltung = circuit_breaker_benutzerverwaltung.clone();
+        let circuit_breaker_buchungsverwaltung = circuit_breaker_buchungsverwaltung.clone();
         let cache_booking = cache_booking.clone();
         // move converts any variables captured by reference or mutable reference to variables captured by value.
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
-                let circuit_breaker_benutzerverwaltung = circuit_breaker_buchungsverwaltung.clone();
+                let circuit_breaker_buchungsverwaltung = circuit_breaker_buchungsverwaltung.clone();
                 let cache_booking = cache_booking.clone();
                 handle_request_wrapper(cache_booking, circuit_breaker_buchungsverwaltung, req)
             }))

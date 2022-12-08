@@ -11,6 +11,7 @@ mod circuitbreaker;
 mod auth;
 use crate::circuitbreaker::CircuitBreaker;
 use crate::cache::Cache;
+use crate::cache::Booking;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Buchung {
@@ -89,20 +90,23 @@ async fn handle_request(cache: Cache, circuit_breaker: CircuitBreaker<'_>, req: 
 
     // Definiere hier zusätlich welche Routen erlaubt sind
     // Wichtig um auch zu checken ob Parameter in der URL dabei sind
-    let re = Regex::new(r"/startTrip/\d+|/endTrip/\d+|/getAllRunningTrips/|/sendVehicleCommand|/updateVehicleLocation")?;
+    let re = Regex::new(r"/startTrip/\d+|/endTrip/\d+|/getAllRunningTrips|/sendVehicleCommand|/updateVehicleLocation")?;
     let regex_route = regex_route(re, req.uri().path());
     let filtered_route: String = regex_route.chars().filter(|c| !c.is_digit(10)).collect();
 
     match (req.method(),  filtered_route.as_str()) {
 
-        (&Method::GET, "/getAllRunningTrips/") => {
+        (&Method::GET, "/getAllRunningTrips") => {
 
             match auth::check_auth_user(login_name, auth_token, true, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
                 Err(err) => return Ok(response_build(&format!("{}", err), 401)),
             }
 
-            Ok(response_build("OK", 200))
+            match cache.get_all_cache_entrys() {
+                Ok(cacheEntrys) => Ok(response_build(&serde_json::to_string(&cacheEntrys)?, 200 )),
+                Err(err) => return Ok(response_build(&format!("{}", err), 500)),
+            }
         }
 
 

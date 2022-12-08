@@ -3,8 +3,9 @@ use anyhow::anyhow;
 use std::sync::{Arc, Mutex};
 #[path = "./circuitbreaker.rs"] mod circuitbreaker;
 use crate::circuitbreaker::CircuitBreaker;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Booking {
     buchungsNummer: i32,
     buchungsDatum: String,

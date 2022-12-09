@@ -30,7 +30,9 @@ pub async fn check_auth_user(login_name: &str, auth_token: &str, is_admin: bool,
         let current_timestamp = Utc::now();
         let time_diff = current_timestamp.timestamp() -  formatted_iat;
 
-        if time_diff > 20000 {
+        println!("AUTH: timediff ist: {}", time_diff);
+
+        if time_diff > 2000 {
             println!("AUTH: Auth Token ist zu alt");
             return Err(anyhow!("token is to old. Please get a new one."));
         } else {

@@ -5,6 +5,18 @@ use std::sync::{Arc, Mutex};
 use crate::circuitbreaker::CircuitBreaker;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Booking_Response {
+    buchungsNummer: i32,
+    buchungsDatum: String,
+    loginName: String,
+    fahrzeugId: i32,
+    dauerDerBuchung: String,
+    preisNetto: f32,
+    status: String
+}
+
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Booking {
     buchungsNummer: i32,
@@ -25,9 +37,7 @@ impl Booking {
                      status, cacheTimestamp: Utc::now().to_rfc3339()};
     }
 
-    pub fn print_login_name(&self) {
-        println!("CACHE LOGIN NAME: {}", self.loginName);
-    }
+    pub fn set_status(&mut self, status: String) { self.status = status; }
 
 }
 
@@ -139,25 +149,27 @@ impl Cache   {
     }
 
 
-    pub fn remove_from_cache(&mut self, booking_found: bool, index: usize) -> Result<(), anyhow::Error> {
+    pub fn remove_from_cache(&mut self, index: usize) {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
-
-        if booking_found  {
-            println!("Booking Cache: Lösche Buchung aus dem Cache");
-            cached_bookings.remove(index);
-        }
-
-        Ok(())
+        println!("Booking Cache: Lösche Buchung aus dem Cache");
+        cached_bookings.remove(index);
     }
 
     pub fn get_all_cache_entrys(&self) -> Result<Vec<Booking>, anyhow::Error> {
-        let mut cached_bookings = self.cached_bookings.lock().unwrap();
+        let cached_bookings = self.cached_bookings.lock().unwrap();
         Ok(cached_bookings.clone())
     }
 
+    pub fn get_booking_from_cache(&self, index: usize) -> Booking {
+        let cached_bookings = self.cached_bookings.lock().unwrap();
+        cached_bookings[index].clone()
+    }
 
-    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: &mut CircuitBreaker<'_>) -> Result<(String, bool, usize ),anyhow::Error> {
+
+    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: &mut CircuitBreaker<'_>) -> Result<(Booking, bool, usize ), anyhow::Error> {
         let mut booking_found = false;
+
+        // Schritt 1: Prüfe ob Buchung aktuell im Cache befindet
         let booking_index = match self.get_cache_entry_index(buchungsnummer) {
             Ok(index) => {
                 booking_found = true;
@@ -167,7 +179,7 @@ impl Cache   {
                 0
             }
         };
-
+        // Wenn Ja gebe Buchung direkt aus dem Cache zuück
         if booking_found {
             let found_booking_login_name = self.get_login_name(booking_index);
             if login_name != found_booking_login_name {
@@ -176,26 +188,33 @@ impl Cache   {
                 println!("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt");
                 return Err(anyhow!("Zugriff auf die Buchung nicht erlaubt!"));
             } else {
-                return Ok(("".to_string(), booking_found, booking_index));
+
+                return Ok((self.get_booking_from_cache(booking_index), booking_found, booking_index));
             }
         } else {
-            // Buchung ist nicht im cache
+            // Wenn nein: Buchung ist nicht im cache
             // Also mache einen Request auf den Microservice Buchungsverwaltung
             println!("BookingCache: HeaderDaten = {} und  {}", login_name, auth_token);
-
-            let response_json;
             let addr_with_params = format!("/getBooking/{}", buchungsnummer);
             println!("{}", addr_with_params);
 
             match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string()).await {
                 Ok((_, response_json_string)) =>  {
-                    response_json = response_json_string;
-                    println!("{:?}", response_json);
-                    return Ok((response_json, booking_found, 0));
+
+                    // Serialisiere den Reponse und wandel dann in Booking um
+                    let mut s = response_json_string.replace("[", "");
+                    s = s.replace("]", "");
+                    println!("{}", s);
+                    let current_booking: Booking_Response = serde_json::from_str(&s)?;
+                    let dauerDerBuchung: i32 = current_booking.dauerDerBuchung.parse()?;
+                    let cacheBooking: Booking = Booking::new(current_booking.buchungsNummer, current_booking.buchungsDatum,
+                                                             current_booking.loginName, dauerDerBuchung, current_booking.fahrzeugId,
+                                                             current_booking.preisNetto, current_booking.status);
+
+                    return Ok((cacheBooking, booking_found, 0));
                 },
                 Err(err) => return Err(err)
             }
-
 
         }
 

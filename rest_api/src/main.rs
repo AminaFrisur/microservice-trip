@@ -13,17 +13,6 @@ use crate::circuitbreaker::CircuitBreaker;
 use crate::cache::Cache;
 use crate::cache::Booking;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Booking_Response {
-    buchungsNummer: i32,
-    buchungsDatum: String,
-    loginName: String,
-    fahrzeugId: i32,
-    dauerDerBuchung: String,
-    preisNetto: f32,
-    status: String
-}
-
 pub fn regex_route(re: Regex, route: &str) -> String {
     if re.is_match(route) {
         let cap = re.captures(route).unwrap();
@@ -130,29 +119,25 @@ async fn handle_request(mut cache: Cache, mut circuit_breaker: CircuitBreaker<'_
 
             let addr_with_params: String = format!("/startTrip/{}", buchungsnummer);
 
-            let booking_res = cache.check_and_get_booking_in_cache(login_name, auth_token, buchungsnummer, &mut circuit_breaker).await?;
-
-            let mut s = booking_res.0.replace("[", "");
-            s = s.replace("]", "");
-            println!("{}", s);
-            let current_booking: Booking_Response = serde_json::from_str(&s)?;
-
-            let dauerDerBuchung: i32 = current_booking.dauerDerBuchung.parse()?;
-
-            let cacheBooking: Booking = Booking::new(current_booking.buchungsNummer, current_booking.buchungsDatum,
-                                                     current_booking.loginName, dauerDerBuchung, current_booking.fahrzeugId,
-                                                     current_booking.preisNetto, current_booking.status);
-
-            cache.update_or_insert_cached_entrie(booking_res.1 , booking_res.2, cacheBooking)?;
+            let mut booking_data = cache.check_and_get_booking_in_cache(login_name, auth_token, buchungsnummer, &mut circuit_breaker).await?;
 
             // rufe CircuitBreaker auf
             match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "POST".to_string()).await {
-                Ok(res) =>  Ok(response_build("Trip wurde beendet", 200)),
+                Ok(res) =>  {
+                    booking_data.0.set_status("started".to_string());
+                    cache.update_or_insert_cached_entrie(booking_data.1, booking_data.2, booking_data.0)?;
+                    Ok(response_build("Trip wurde gestartet", 200))
+                },
                 Err(err) => return  Ok(response_build("Trip konnte nicht gestartet werden", 401)),
             }
         }
 
         (&Method::POST, "/endTrip/") => {
+
+            match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
+                Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
+                Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
+            }
 
             // extrahiere die Buchungsnummer aus der URL
             let buchungsnummer_string: String = regex_route.chars().filter(|c| c.is_digit(10)).collect();
@@ -162,7 +147,21 @@ async fn handle_request(mut cache: Cache, mut circuit_breaker: CircuitBreaker<'_
 
             // rufe CircuitBreaker auf
             match circuit_breaker.circuit_breaker_post_request(addr_with_params, login_name.to_string(), auth_token.to_string(), "POST".to_string()).await {
-                Ok(res) =>  Ok(response_build("Trip wurde beendet", 200)),
+                Ok(res) =>  {
+                    // Prüfe ob Buchung im Cache ist
+                    // Wenn ja -> Lösche die Buchung aus dem Cache, da Trip beendet
+                    match cache.get_cache_entry_index(buchungsnummer) {
+                        Ok(index) => {
+                            cache.remove_from_cache(index);
+                            println!("ENDTRIP: Buchung befindet sich im Cache -> Lösche Buchung aus dem Cache!")
+                        },
+                        Err(_) => {
+                            println!("ENDTRIP: Buchung befindet sich nicht im Cache");
+                        }
+                    };
+
+                    Ok(response_build("Trip wurde beendet", 200))
+                },
                 Err(err) => return  Ok(response_build("Trip konnte nicht beendet werden", 401)),
             }
         }

@@ -13,7 +13,7 @@ pub struct Booking_Response {
     fahrzeugId: i32,
     dauerDerBuchung: String,
     preisNetto: f32,
-    status: String
+    status: String,
 }
 
 
@@ -26,7 +26,9 @@ pub struct Booking {
     dauerDerBuchung: i32,
     preisNetto: f32,
     status: String,
-    cacheTimestamp: String
+    cacheTimestamp: String,
+    longitude: i64,
+    langtitude: i64
 }
 
 impl Booking {
@@ -34,10 +36,14 @@ impl Booking {
 
         return Self {buchungsNummer, loginName, dauerDerBuchung,
                     buchungsDatum, fahrzeugId, preisNetto,
-                     status, cacheTimestamp: Utc::now().to_rfc3339()};
+                     status, cacheTimestamp: Utc::now().to_rfc3339(),
+                    longitude: 0, langtitude: 0 };
     }
 
     pub fn set_status(&mut self, status: String) { self.status = status; }
+    pub fn get_status(&mut self) -> String { self.status.clone() }
+    pub fn set_longitude(&mut self, longitude: i64) { self.longitude = longitude; }
+    pub fn set_langtitude(&mut self, langtitude: i64) { self.langtitude = langtitude; }
 
 }
 

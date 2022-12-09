@@ -13,6 +13,22 @@ use crate::circuitbreaker::CircuitBreaker;
 use crate::cache::Cache;
 use crate::cache::Booking;
 
+
+// Structs for Body Parsen
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Vehicle_Location {
+    buchungsNummer: i32,
+    langtitude: i64,
+    longitude: i64
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Vehicle_Command {
+    buchungsNummer: i32,
+    kommando: String
+}
+
 pub fn regex_route(re: Regex, route: &str) -> String {
     if re.is_match(route) {
         let cap = re.captures(route).unwrap();
@@ -78,33 +94,55 @@ async fn handle_request(mut cache: Cache, mut circuit_breaker: CircuitBreaker<'_
 
 
         (&Method::POST, "/updateVehicleLocation") => {
-
-            match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
+            let cloned_login_name = login_name.to_string();
+            let cloned_auth_token = auth_token.to_string();
+            // hyper::body::to_bytes verändert anscheinend req
+            // deshalb muss login_name und auth_token werte kopiert werden
+            // damit diese nicht durch die Method verändert werden
+            let byte_stream = hyper::body::to_bytes(req).await?;
+            match auth::check_auth_user(&cloned_login_name[..], &cloned_auth_token[..], false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
                 Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
-            let byte_stream = hyper::body::to_bytes(req).await?;
-            //let fahrzeug: Fahrzeug = serde_json::from_slice(&byte_stream)?;
-
-            Ok(response_build("Fahrzeug Standort wurde aktualisiert",200))
+            let location: Vehicle_Location = serde_json::from_slice(&byte_stream)?;
+            let mut booking_data = cache.check_and_get_booking_in_cache(&cloned_login_name[..], &cloned_auth_token[..], location.buchungsNummer, &mut circuit_breaker).await?;
+            let status = booking_data.0.get_status();
+            if status == "started".to_string() {
+                booking_data.0.set_longitude(location.longitude);
+                booking_data.0.set_langtitude(location.langtitude);
+                cache.update_or_insert_cached_entrie(booking_data.1, booking_data.2, booking_data.0)?;
+                Ok(response_build("Fahrzeug Standort wurde aktualisiert",200))
+            } else {
+                Ok(response_build("Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !", 500))
+            }
         }
 
         (&Method::POST, "/sendVehicleCommand") => {
 
-            match auth::check_auth_user(login_name, auth_token, false, JWT_SECRET).await {
+            let cloned_login_name = login_name.to_string();
+            let cloned_auth_token = auth_token.to_string();
+            // hyper::body::to_bytes verändert anscheinend req
+            // deshalb muss login_name und auth_token werte kopiert werden
+            // damit diese nicht durch die Method verändert werden
+            let byte_stream = hyper::body::to_bytes(req).await?;
+            match auth::check_auth_user(&cloned_login_name[..], &cloned_auth_token[..], false, JWT_SECRET).await {
                 Ok(()) => println!("Rest API: Nutzer ist authentifiziert"),
                 Err(err) => return Ok(response_build(&format!("Authentifizierung fehlgeschlagen: {}", err), 401)),
             }
 
-
-
-            // let byte_stream = hyper::body::to_bytes(req).await?;
-            // let fahrzeug: Fahrzeug = serde_json::from_slice(&byte_stream)?;
-
-
-            Ok(response_build("Fahrzeug Kommando ausgeführt", 200))
+            let command: Vehicle_Command = serde_json::from_slice(&byte_stream)?;
+            let mut booking_data = cache.check_and_get_booking_in_cache(&cloned_login_name[..], &cloned_auth_token[..], command.buchungsNummer, &mut circuit_breaker).await?;
+            let status = booking_data.0.get_status();
+            if status == "started".to_string() {
+                cache.update_or_insert_cached_entrie(booking_data.1, booking_data.2, booking_data.0)?;
+                // TODO: Mockup Request zu Fahrzeug
+                Ok(response_build("Fahrzeug Kommando ausgeführt",200))
+            } else {
+                Ok(response_build("Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !", 500))
+            }
         }
+
 
         (&Method::POST, "/startTrip/") => {
 

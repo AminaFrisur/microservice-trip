@@ -92,7 +92,6 @@ async fn handle_request(mut cache: Cache, mut circuit_breaker: CircuitBreaker<'_
             }
         }
 
-
         (&Method::POST, "/updateVehicleLocation") => {
             let cloned_login_name = login_name.to_string();
             let cloned_auth_token = auth_token.to_string();

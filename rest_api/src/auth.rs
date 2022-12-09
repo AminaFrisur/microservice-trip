@@ -1,11 +1,8 @@
 use hmac::{Hmac, Mac};
-use jwt::{AlgorithmType, Header, Token, VerifyWithKey};
+use jwt::{VerifyWithKey};
 use sha2::Sha256;
-use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use serde_json::from_str;
-use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
-use std::time::Instant;
+use chrono::{Utc};
 use anyhow::anyhow;
 
 #[derive(Serialize, Deserialize)]

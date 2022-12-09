@@ -1,4 +1,4 @@
-var jwt = require('jsonwebtoken');
+var jwt = require('./wasm_modules/jwt/pkg/jwt.js');
 module.exports = function() {
     var module = {};
     module.checkAuth = async function(req, res, isAdmin, jwt_secret, next) {
@@ -6,25 +6,12 @@ module.exports = function() {
         let loginName = req.headers.login_name;
 
         try {
-            var decoded = jwt.verify(authToken, jwt_secret);
-            console.log(decoded);
-            if(decoded && decoded.iat && decoded.login_name == loginName &&
-                ((isAdmin && decoded.is_admin == true) || isAdmin == false)) {
-
-                // check timestamp
-                let timeDiff = new Date() - decoded.iat;
-                console.log("AUTH: TimeDiff von Token ist: " + timeDiff);
-                if(timeDiff > 2000000) {
-                    console.log("AUTH: Auth Token ist zu alt")
-                    res.status(401).send("token is to old. Please get a new one.");
-                } else {
-                    console.log("Authentifizierungstoken ist valide");
-                    next();
-                }
-
-
+            let check = jwt.jwt_sign(loginName, authToken, isAdmin, jwt_secret);
+            if(check) {
+                console.log("AUTH: token ist Valide");
+                next();
             } else {
-                res.status(401).send("token and/or login name are missing or are not valid");
+                res.status(401).send("token is not valid");
             }
         } catch(e) {
             console.log("AUTH: " + e)

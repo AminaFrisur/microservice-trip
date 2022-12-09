@@ -16,8 +16,8 @@ extern "C" {
 extern "C" {
     pub type CircuitBreaker;
 
-    #[wasm_bindgen(method)]
-    pub fn circuitBreakerRequestForWasmRust(this: &CircuitBreaker, path: String, bodyData: String, HeaderData: String, httpMethod: String) -> String;
+    #[wasm_bindgen(method, catch)]
+    pub async fn circuitBreakerRequestForWasmRust(this: &CircuitBreaker, path: String, bodyData: String, HeaderData: String, httpMethod: String) -> Result<(),JsValue>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -202,7 +202,7 @@ impl Cache   {
     }
 
     #[wasm_bindgen(method)]
-    pub fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: &CircuitBreaker) -> bool {
+    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: CircuitBreaker) {
         let mut booking_found = false;
         log("TEST 8".to_string());
         // Schritt 1: Prüfe ob Buchung aktuell im Cache befindet
@@ -218,10 +218,10 @@ impl Cache   {
                 // let cached_bookings = self.cached_bookings.unlock().unwrap();
                 log("Cache Booking: übergebener LoginName entpricht nicht dem aus dem Cache".to_string());
                 log("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt".to_string());
-                return false;
+
             } else {
 
-                return true
+
             }
         } else {
             // Wenn nein: Buchung ist nicht im cache
@@ -229,9 +229,13 @@ impl Cache   {
             log(format!("BookingCache: HeaderDaten = {} und  {}", login_name, auth_token));
             let addr_with_params = format!("/getBooking/{}", buchungsnummer);
             log(format!("{}", addr_with_params));
-
-            let res = circuit_breaker.circuitBreakerRequestForWasmRust(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string());
-            true
+            log("TEST 10".to_string());
+            let res = match circuit_breaker.circuitBreakerRequestForWasmRust(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string()).await {
+              Ok(e) => log("ALLES OK BEI CIRUCIT BREAKER".to_string()),
+                Err(e) => log("ALLES NICHT OK BEI CIRUCIT BREAKER".to_string())
+            };
+            log(format!("{:?}", res));
+            log("TEST 11".to_string());
 
         }
 

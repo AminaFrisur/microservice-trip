@@ -71,7 +71,8 @@ app.get('/test', async function (req, res) {
     try {
         console.log("TEESSSTTT");
         bookingCacheInstance.check_and_get_booking_in_cache("admin", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2dpbl9uYW1lIjoiYWRtaW4iLCJpc19hZG1pbiI6dHJ1ZSwiaWF0IjoxNjcwNTc4OTY5OTk4fQ.EYmPmuTDqrdeELnEE_17AnHKDiyfzVzR-BcZrsJfCuc", 1, circuitBreakerBuchungsverwaltung)
-        console.log("TFDRIJVHIUDSHIHSDREDIDGSHF");
+        console.log("ALLES OK !!!!!!!!!!!!!");
+        res.status(200).send("ALLLES OK");
     } catch(err){
         console.log(err);
         res.status(401).send(err);

@@ -40,6 +40,9 @@ class HttpClient {
                             console.log("HTTP Client: Parse JSON Response");
                             resBody = JSON.stringify(JSON.parse(resBody));
                             break;
+
+                        default:
+                            resBody = "ALLES OK";
                     }
                     console.log("HTTP Client: Post Request war erfolgreich!");
                     resolve(resBody);

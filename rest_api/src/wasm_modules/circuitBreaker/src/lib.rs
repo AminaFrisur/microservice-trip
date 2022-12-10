@@ -109,7 +109,7 @@ impl CircuitBreaker {
                 // Somit ist Response HTTP Return Status = 200
                 match res.as_string() {
                     Some(s) => {return format!("{}",s )},
-                    None => { log("Circuit Breaker: Request war erfolgreich, aber response ist nicht 20ß".to_string());},
+                    None => { log("Circuit Breaker: Request war erfolgreich, aber response HTTP CODE ist nicht 200".to_string());},
                 }
 
                 // Request ist Erfolgreich

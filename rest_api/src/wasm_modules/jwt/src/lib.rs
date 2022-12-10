@@ -6,10 +6,16 @@ use chrono::{Utc};
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize, Deserialize)]
-struct jwt_claims {
+pub struct jwt_claims {
     login_name: String,
     is_admin: bool,
     iat: i64
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: String);
 }
 
 #[wasm_bindgen]
@@ -25,10 +31,10 @@ pub fn jwt_sign(login_name: String, auth_token: String, is_admin: bool, private_
         let current_timestamp = Utc::now();
         let time_diff = current_timestamp.timestamp() - formatted_iat;
 
-        println!("AUTH: timediff ist: {}", time_diff);
+        log(format!("AUTH: timediff ist: {}", time_diff));
 
         if time_diff > 2000 {
-            println!("AUTH: Auth Token ist zu alt");
+            log(format!("AUTH: Auth Token ist zu alt"));
             return false;
         } else {
             return true;

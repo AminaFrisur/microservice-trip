@@ -4,8 +4,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 var jsonBodyParser = bodyParser.json({ type: 'application/json' });
 
-var BookingCache = require('./bookingCache.js');
-var bookingCacheInstance = new BookingCache(10000, 10000);
+var BookingCache = require('./wasm_modules/bookingCache/pkg/bookingCache.js');
+var bookingCacheInstance = new BookingCache.Cache(BigInt(10000), BigInt( 10000));
 
 let Auth = require('./auth.js')();
 
@@ -27,6 +27,18 @@ const middlerwareCheckAuth = (isAdmin) => {
 var rootBooking = "root";
 var passwordBooking = process.env.BOOKINGPW;
 
+
+function parseBookingWasmPointer(bookingPointer) {
+    let booking = new BookingCache.Booking(
+        bookingPointer.get_buchungsNummer(), bookingPointer.get_buchungsDatum(),
+        bookingPointer.get_loginName(), bookingPointer.get_dauerDerBuchung(),
+        bookingPointer.get_fahrzeugId(), bookingPointer.get_preisNetto(),
+        bookingPointer.get_status(), bookingPointer.get_longitude(),
+        bookingPointer.get_langtitude()
+    )
+
+    return booking;
+}
 
 function checkParams(req, res, requiredParams) {
     console.log("checkParams", requiredParams);
@@ -67,8 +79,8 @@ const app = express();
 // nur für Admin
 app.get('/getAllRunningTrips', [middlerwareCheckAuth(true)], async function (req, res) {
     try {
-        let cacheEntrys = bookingCacheInstance.getAllCacheEntrys();
-        res.status(200).send(cacheEntrys);
+        // let cacheEntrys = bookingCacheInstance.getAllCacheEntrys();
+        res.status(500).send("AKTUELL NICHT SUPPORTED");
     } catch(err){
         console.log(err);
         res.status(401).send(err);
@@ -81,18 +93,18 @@ app.get('/getAllRunningTrips', [middlerwareCheckAuth(true)], async function (req
 app.post('/updateVehicleLocation', [middlerwareCheckAuth(false), jsonBodyParser], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "longitude", "langtitude", "login_name", "auth_token"]);
-        console.log("PARAMETER SIND: ");
-        console.log(params);
-        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
-        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
-            currentBooking.booking.longitude = params.longitude;
-            currentBooking.booking.langtitude = params.langtitude;
-            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+        let result = await bookingCacheInstance.check_and_get_booking_in_cache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+        let currentBooking = result.get_booking();
+        let bookingFound =  result.get_bookingFound();
+        if(currentBooking.get_buchungsNummer() > 0) {
+            currentBooking.set_longitude(BigInt(params.longitude));
+            currentBooking.set_langtitude(BigInt(params.langtitude));
+            let booking = parseBookingWasmPointer(currentBooking);
+            bookingCacheInstance.update_or_insert_cached_entrie(bookingFound, result.get_index(), booking);
             res.status(200).send("Fahrzeug Standort wurde aktualisiert");
         } else {
             throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
         }
-
 
     } catch(err){
         console.log(err);
@@ -104,10 +116,13 @@ app.post('/updateVehicleLocation', [middlerwareCheckAuth(false), jsonBodyParser]
 app.post('/sendVehicleCommand', [middlerwareCheckAuth(false), jsonBodyParser], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "auth_token", "login_name", "Kommando"]);
-        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
+        let result = await bookingCacheInstance.check_and_get_booking_in_cache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+        let currentBooking = result.get_booking();
+        let bookingFound =  result.get_bookingFound();
+        if(currentBooking.get_status() == "started") {
 
-        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
-            bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+            let booking = parseBookingWasmPointer(currentBooking);
+            bookingCacheInstance.update_or_insert_cached_entrie(bookingFound, result.get_index(), booking);
             // TODO: Mockup Request zu Fahrzeug
             res.status(200).send("Fahrzeug Kommando ausgeführt");
         } else {
@@ -126,15 +141,15 @@ app.post('/sendVehicleCommand', [middlerwareCheckAuth(false), jsonBodyParser], a
 app.post('/startTrip/:buchungsNummer', [middlerwareCheckAuth(false)], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "login_name", "auth_token"]);
-        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung)
-        console.log(currentBooking);
-        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "paid") {
-            let headerData = { 'login_name': rootBooking, 'password': passwordBooking};
-
-            let response = await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/startTrip/" + params.buchungsNummer, {}, headerData, "POST");
+        let result = await bookingCacheInstance.check_and_get_booking_in_cache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+        let currentBooking = result.get_booking();
+        let bookingFound =  result.get_bookingFound();
+        if(currentBooking.get_status() == "paid") {
+            let response = await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/startTrip/" + params.buchungsNummer, params.login_name, params.auth_token, "POST");
             if(response) {
-                currentBooking.booking.status = "started";
-                bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
+                currentBooking.set_status("started");
+                let booking = parseBookingWasmPointer(currentBooking);
+                bookingCacheInstance.update_or_insert_cached_entrie(bookingFound, result.get_index(), booking);
                 res.status(200).send("Trip wurde gestartet");
             } else {
                 throw "Buchung konnte nicht gestartet werden !"
@@ -156,18 +171,19 @@ app.post('/startTrip/:buchungsNummer', [middlerwareCheckAuth(false)], async func
 app.post('/endTrip/:buchungsNummer', [middlerwareCheckAuth(false)], async function (req, res) {
     try {
         let params = checkParams(req, res,["buchungsNummer", "login_name", "auth_token"]);
-        let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
-        if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
+        let result = await bookingCacheInstance.check_and_get_booking_in_cache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
+        let currentBooking = result.get_booking();
+        let bookingFound =  result.get_bookingFound();
+        if(currentBooking.get_status() == "started") {
+            await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/endTrip/" + params.buchungsNummer, params.login_name, params.auth_token, "POST");
+            if(bookingFound) {
+                bookingCacheInstance.remove_from_cache(result.get_index());
+            }
 
-            let headerData = { 'login_name': rootBooking, 'password': passwordBooking};
-
-            await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/endTrip/" + params.buchungsNummer, {}, headerData, "POST");
-            bookingCacheInstance.removeFromCache(currentBooking.index);
         } else {
             throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
         }
         res.status(200).send("Trip wurde beendet");
-
     } catch(err){
         console.log(err);
         res.status(401).send(err);

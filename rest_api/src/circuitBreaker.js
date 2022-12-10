@@ -63,16 +63,17 @@ class CircuitBreaker {
         }
     }
 
+
     // hostname = Loadbalancer der an die entsprechenden Microservices innerhalb der Fachlichkeit weiterleiten
-    async circuitBreakerRequest(path, bodyData, headerData, httpMethod) {
+    async circuitBreakerRequest(path, login_name, auth_token, httpMethod) {
 
         // Schritt 1: Berechne Abstand zwischen gespeicherten timeStamp und aktuellen timeStamp in Sekunden
-         let timeDiff = ( new Date() - this.timestamp ) / 1000;
+        let timeDiff = ( new Date() - this.timestamp ) / 1000;
 
-         // Schritt 2: Wenn der Timestamp älter ist als 5 Minuten -> setze alles auf Anfang
-         this.checkReset(timeDiff);
+        // Schritt 2: Wenn der Timestamp älter ist als 5 Minuten -> setze alles auf Anfang
+        this.checkReset(timeDiff);
 
-         //Schritt 3: Prüfe ob timeout für Zustand Open abgelaufen ist
+        //Schritt 3: Prüfe ob timeout für Zustand Open abgelaufen ist
         if(this.CircuitBreakerState == "OPEN") {
 
             if(timeDiff >= this.timeoutOpenState) {
@@ -101,6 +102,10 @@ class CircuitBreaker {
             this.CircuitBreakerState = "CLOSED";
         }
 
+        let headerData = {
+            'auth_token': auth_token,
+            'login_name': login_name
+        };
 
         try {
             // Schritt 6: Falls die Bedingungen von Schritt 1 - Schritt 4 nicht erfüllt sind -> führe den Request durch
@@ -110,10 +115,10 @@ class CircuitBreaker {
             if(this.CircuitBreakerState == "HALF") {
                 this.requestCount++;
             }
-            let result = await httpClient.makeRequest(this.hostname, this.port, path, bodyData, headerData, httpMethod);
+            let result = await httpClient.makeRequest(this.hostname, this.port, path, {}, headerData, httpMethod);
             this.successCount++;
             console.log("Circuit Breaker: Request war erfolgreich. Success Count ist jetzt bei " + this.successCount);
-            return result;
+            return JSON.stringify(result);
         } catch (err) {
             this.failCount++;
 
@@ -135,6 +140,7 @@ class CircuitBreaker {
             throw err;
         }
     }
+
 
 }
 

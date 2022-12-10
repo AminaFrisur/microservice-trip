@@ -1,10 +1,10 @@
 const http = require("http");
-module.exports = function() {
-    var module = {};
+class HttpClient {
 
-    module.makeRequest = async function(hostname, port, path, bodyData, headerData, method) {
+    async makeRequest(hostname, port, path, login_name, auth_token, method) {
 
         return new Promise((resolve,reject) => {
+
 
             const options = {
                 hostname: hostname,
@@ -12,10 +12,13 @@ module.exports = function() {
                 path: path,
                 method: method,
                 headers: {
-                    ...headerData
+                    "login_name": login_name,
+                    "auth_token": auth_token
                 },
                 timeout: 3000
             };
+
+            let bodyData = {};
 
             const postData = JSON.stringify(bodyData);
 
@@ -29,13 +32,13 @@ module.exports = function() {
 
                     if(res.statusCode != 200 ) {
                         console.log("Circuit Breaker: HTTP Status Code ist " +  res.statusCode);
-                        resolve(false);
+                        resolve(res.statusCode);
                     }
 
                     switch(res.headers['content-type']) {
                         case 'application/json; charset=utf-8':
                             console.log("HTTP Client: Parse JSON Response");
-                            resBody = JSON.parse(resBody);
+                            resBody = JSON.stringify(JSON.parse(resBody));
                             break;
                     }
                     console.log("HTTP Client: Post Request war erfolgreich!");
@@ -50,6 +53,5 @@ module.exports = function() {
             req.end();
         })
     }
-
-    return module;
 }
+module.exports = HttpClient

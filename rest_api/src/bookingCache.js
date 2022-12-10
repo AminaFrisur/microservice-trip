@@ -1,3 +1,5 @@
+var HttpClient = require('./httpClient.js');
+var httpClient = new HttpClient();
 class BookingCache {
 
     cachedEntries;
@@ -133,23 +135,21 @@ class BookingCache {
 
             // Buchung ist nicht im cache
             // Also mache einen Request auf den Microservice Buchungsverwaltung
-            let headerData = {
-                'auth_token': authToken,
-                'login_name': loginName
-            };
             console.log("BookingCache: HeaderDaten = " + authToken + " und " + loginName)
-            let response = await circuitBreaker.circuitBreakerRequest("/getBooking/" + buchungsNummer, "", headerData, "GET");
+            let response = await circuitBreaker.circuit_breaker_post_request("/getBooking/" + buchungsNummer, loginName, authToken, "GET", httpClient);
             console.log("BookingCache: response ist");
             console.log(response);
-            if(response && response.length > 0) {
+            if(parseInt(response, 10) != NaN) {
+                let test = JSON.parse(response);
+                console.log(test);
                 let booking = {
-                    "buchungsNummer": response[0].buchungsNummer,
-                    "buchungsDatum": response[0].buchungsDatum,
-                    "loginName": response[0].loginName,
-                    "fahrzeugId": response[0].fahrzeugId,
-                    "dauerDerBuchung": response[0].dauerDerBuchung,
-                    "preisNetto": response[0].preisNetto,
-                    "status": response[0].status
+                    "buchungsNummer": test[0].buchungsNummer,
+                    "buchungsDatum": test[0].buchungsDatum,
+                    "loginName": test[0].loginName,
+                    "fahrzeugId": test[0].fahrzeugId,
+                    "dauerDerBuchung": test[0].dauerDerBuchung,
+                    "preisNetto": test[0].preisNetto,
+                    "status": test[0].status
                 }
                 // Wenn erfolgreich, speichere Buchung in den Cache
                 return {"booking": booking, "index": -1};

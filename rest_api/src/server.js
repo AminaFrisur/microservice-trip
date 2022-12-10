@@ -7,14 +7,17 @@ var jsonBodyParser = bodyParser.json({ type: 'application/json' });
 var BookingCache = require('./bookingCache.js');
 var bookingCacheInstance = new BookingCache(10000, 10000);
 
+var HttpClient = require('./httpClient.js');
+var httpClient = new HttpClient();
+
 let Auth = require('./auth.js')();
 
 const PORT = 8000;
 const HOST = '0.0.0.0';
 
-var CircuitBreaker = require('./circuitBreaker.js');
-var circuitBreakerBuchungsverwaltung = new CircuitBreaker(150, 30, 0, -3,
-                                            10, 3,process.env.BUCHUNGSVERWALTUNG, "80");
+var CircuitBreaker = require('./wasm_modules/circuitBreaker/pkg/CircuitBrekaer.js');
+var circuitBreakerBuchungsverwaltung = new CircuitBreaker.CircuitBreaker(BigInt(150), BigInt(30), BigInt(0), BigInt(-3),
+                                            BigInt(10), BigInt(3), process.env.BUCHUNGSVERWALTUNG, 80);
 
 const JWT_SECRET = "goK!pusp6ThEdURUtRenOwUhAsWUCLheasfr43qrf43rttq3";
 
@@ -131,7 +134,8 @@ app.post('/startTrip/:buchungsNummer', [middlerwareCheckAuth(false)], async func
         if(currentBooking && currentBooking.booking && currentBooking.booking.status == "paid") {
             let headerData = { 'login_name': rootBooking, 'password': passwordBooking};
 
-            let response = await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/startTrip/" + params.buchungsNummer, {}, headerData, "POST");
+            let response = await circuitBreakerBuchungsverwaltung.circuit_breaker_post_request("/startTrip/" + params.buchungsNummer, params.login_name, params.auth_token, "POST", httpClient);
+
             if(response) {
                 currentBooking.booking.status = "started";
                 bookingCacheInstance.updateOrInsertcachedEntrie(currentBooking.index, currentBooking.booking);
@@ -158,11 +162,10 @@ app.post('/endTrip/:buchungsNummer', [middlerwareCheckAuth(false)], async functi
         let params = checkParams(req, res,["buchungsNummer", "login_name", "auth_token"]);
         let currentBooking = await bookingCacheInstance.checkAndGetBookingInCache(params.login_name, params.auth_token, params.buchungsNummer, circuitBreakerBuchungsverwaltung);
         if(currentBooking && currentBooking.booking && currentBooking.booking.status == "started") {
-
-            let headerData = { 'login_name': rootBooking, 'password': passwordBooking};
-
-            await circuitBreakerBuchungsverwaltung.circuitBreakerRequest("/endTrip/" + params.buchungsNummer, {}, headerData, "POST");
-            bookingCacheInstance.removeFromCache(currentBooking.index);
+            let response = await circuitBreakerBuchungsverwaltung.circuit_breaker_post_request("/endTrip/" + params.buchungsNummer, params.login_name, params.auth_token, "POST", httpClient);
+            if(parseInt(response, 10) != NaN) {
+                bookingCacheInstance.removeFromCache(currentBooking.index);
+            }
         } else {
             throw "Buchung konnte unter angegebener Buchungsnummer und Nutzername nicht gefunden werden !"
         }

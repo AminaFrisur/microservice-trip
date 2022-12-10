@@ -60,19 +60,38 @@ function checkParams(req, res, requiredParams) {
     return  paramsToReturn;
 }
 
+
+function parseBookingWasmPointer(bookingPointer) {
+    let booking = new bookingCache.Booking(
+        bookingPointer.get_buchungsNummer(), bookingPointer.get_buchungsDatum(),
+        bookingPointer.get_loginName(), bookingPointer.get_dauerDerBuchung(),
+        bookingPointer.get_fahrzeugId(), bookingPointer.get_preisNetto(),
+        bookingPointer.get_status(), bookingPointer.get_longitude(),
+        bookingPointer.get_langtitude()
+    )
+
+    return booking;
+}
+
+
 // App
 const app = express();
-
-
 // Wird vom Fahrzeug aufgerufen
 // Soll im Cache die aktuelle Postion speichern
 // In einem Bestimmten Abstand wird dieser Call vom Fahrzeug selbständig aufgerufen
 app.get('/test', async function (req, res) {
     try {
-        console.log("TEESSSTTT");
-        bookingCacheInstance.check_and_get_booking_in_cache("admin", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2dpbl9uYW1lIjoiYWRtaW4iLCJpc19hZG1pbiI6dHJ1ZSwiaWF0IjoxNjcwNTc4OTY5OTk4fQ.EYmPmuTDqrdeELnEE_17AnHKDiyfzVzR-BcZrsJfCuc", 1, circuitBreakerBuchungsverwaltung)
-        console.log("ALLES OK !!!!!!!!!!!!!");
-        res.status(200).send("ALLLES OK");
+        let result = await bookingCacheInstance.check_and_get_booking_in_cache("admin", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2dpbl9uYW1lIjoiYWRtaW4iLCJpc19hZG1pbiI6dHJ1ZSwiaWF0IjoxNjcwNjY3NDcwOTk4fQ.afC-Yah8VD5gXIJHftUetW3wzkUPo1_7Ca3HbgimcmQ", 1, circuitBreakerBuchungsverwaltung)
+        if(result.get_buchungsNummer() > 0) {
+            result.set_status("started");
+            let booking = parseBookingWasmPointer(result);
+            bookingCacheInstance.update_or_insert_cached_entrie(false, 0, booking);
+            res.status(200).send(result.get_buchungsDatum());
+        } else {
+            res.status(400).send("Angegebene Buchung konnte nicht abgerufen werden!");
+        }
+
+
     } catch(err){
         console.log(err);
         res.status(401).send(err);

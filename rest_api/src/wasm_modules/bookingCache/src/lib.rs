@@ -17,7 +17,7 @@ extern "C" {
     pub type CircuitBreaker;
 
     #[wasm_bindgen(method, catch)]
-    pub async fn circuitBreakerRequestForWasmRust(this: &CircuitBreaker, path: String, bodyData: String, HeaderData: String, httpMethod: String) -> Result<(),JsValue>;
+    pub async fn circuitBreakerRequestForWasmRust(this: &CircuitBreaker, path: String, bodyData: String, HeaderData: String, httpMethod: String) -> Result<JsValue,JsValue>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -49,19 +49,48 @@ pub struct Booking {
 #[wasm_bindgen]
 impl Booking {
     #[wasm_bindgen(constructor)]
-    pub fn new(buchungsNummer: i32, buchungsDatum: String, loginName: String, dauerDerBuchung: i32, fahrzeugId: i32, preisNetto: f32, status: String) -> Self {
+    pub fn new(buchungsNummer: i32, buchungsDatum: String, loginName: String, dauerDerBuchung: i32, fahrzeugId: i32, preisNetto: f32,
+               status: String, longitude: i64, langtitude: i64) -> Self {
 
         return Self {buchungsNummer, loginName, dauerDerBuchung,
             buchungsDatum, fahrzeugId, preisNetto,
             status, cacheTimestamp: Utc::now().to_rfc3339(),
-            longitude: 0, langtitude: 0 };
+            longitude, langtitude };
     }
+
+    #[wasm_bindgen(method)]
+    pub fn get_buchungsNummer(&self) -> i32 { self.buchungsNummer.into() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_buchungsDatum(&self) -> String { self.buchungsDatum.clone() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_loginName(&self) -> String { self.loginName.clone() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_fahrzeugId(&self) -> i32 { self.fahrzeugId.into() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_dauerDerBuchung(&self) -> i32 { self.dauerDerBuchung.into() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_preisNetto(&self) -> f32 { self.preisNetto.into() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_status(&self) -> String { self.status.clone() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_longitude(&self) -> i64 { self.buchungsNummer.into() }
+
+    #[wasm_bindgen(method)]
+    pub fn get_langtitude(&self) -> i64 { self.buchungsNummer.into() }
+
     #[wasm_bindgen(method)]
     pub fn set_status(&mut self, status: String) { self.status = status; }
-    #[wasm_bindgen(method)]
-    pub fn get_status(&mut self) -> String { self.status.clone() }
+
     #[wasm_bindgen(method)]
     pub fn set_longitude(&mut self, longitude: i64) { self.longitude = longitude; }
+
     #[wasm_bindgen(method)]
     pub fn set_langtitude(&mut self, langtitude: i64) { self.langtitude = langtitude; }
 
@@ -137,16 +166,11 @@ impl Cache   {
 
     pub fn get_cache_entry_index(& mut self, buchungsNummer: i32) -> String {
         self.clear_cache();
-        log("TEST 1".to_string());
         let mut final_index: usize = 0;
-        log("TEST 2".to_string());
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
-        log("TEST 3".to_string());
         let mut booking_found = false;
-        log("TEST 4".to_string());
 
         for i in 0..(cached_bookings.len()) {
-            log("TEST 5".to_string());
             log(format!("{}", cached_bookings[i].buchungsNummer));
             if cached_bookings[i].buchungsNummer == buchungsNummer {
                 final_index = i;
@@ -157,11 +181,9 @@ impl Cache   {
                 break;
             }
         }
-        log("TEST 6".to_string());
         if booking_found {
             return format!("{}", final_index);
         } else {
-            log("TEST 7".to_string());
             return format!("{}", -1);
         }
 
@@ -173,11 +195,8 @@ impl Cache   {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
 
         if booking_found {
-            log("Booking Cache: mache ein Update".to_string());
             cached_bookings.remove(index);
         }
-        // Füge User neu im Cache hinzu, da nicht im cache vorhanden
-        log("Booking Cach: Füge Eintrag neu in Cache hinzu".to_string());
         cached_bookings.push(newCacheEntry);
 
         true
@@ -186,7 +205,6 @@ impl Cache   {
     #[wasm_bindgen(method)]
     pub fn remove_from_cache(&mut self, index: usize) {
         let mut cached_bookings = self.cached_bookings.lock().unwrap();
-        log("Booking Cache: Lösche Buchung aus dem Cache".to_string());
         cached_bookings.remove(index);
     }
 
@@ -202,26 +220,31 @@ impl Cache   {
     }
 
     #[wasm_bindgen(method)]
-    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: CircuitBreaker) {
-        let mut booking_found = false;
-        log("TEST 8".to_string());
+    pub async fn check_and_get_booking_in_cache(&mut self, login_name: &str, auth_token: &str, buchungsnummer: i32, circuit_breaker: CircuitBreaker) -> Booking {
+        // let mut booking_found = false;
+
+        let default_booking_result = Booking {buchungsNummer: -1, buchungsDatum: "ERROR".to_string(),
+                                              loginName: "ERROR".to_string(), fahrzeugId: -1, dauerDerBuchung: -1,
+                                              preisNetto: -1.0, status: "ERROR".to_string(),  cacheTimestamp: "ERROR".to_string(),
+                                              longitude: -1, langtitude: -1 };
+
         // Schritt 1: Prüfe ob Buchung aktuell im Cache befindet
         let booking_index = self.get_cache_entry_index(buchungsnummer);
         let booking_index_i32 = i32::from_str(&booking_index[..]).unwrap();
 
         // Wenn Ja gebe Buchung direkt aus dem Cache zuück
-        log("TEST 9".to_string());
         if booking_index_i32 >= 0 {
+            log("Cache Booking: Buchung wurde im Cache gefunden".to_string());
             let booking_index_usize = usize::from_str(&booking_index[..]).unwrap();
             let found_booking_login_name = self.get_login_name(booking_index_usize);
             if login_name != found_booking_login_name {
                 // let cached_bookings = self.cached_bookings.unlock().unwrap();
                 log("Cache Booking: übergebener LoginName entpricht nicht dem aus dem Cache".to_string());
                 log("Cache Booking: Zugriff auf die Buchung ist nicht erlaubt".to_string());
-
+                return default_booking_result;
             } else {
-
-
+                log("Cache Booking: Zugriff auf Buchung erlaubt".to_string());
+                return self.get_booking_from_cache(booking_index_usize);
             }
         } else {
             // Wenn nein: Buchung ist nicht im cache
@@ -229,13 +252,49 @@ impl Cache   {
             log(format!("BookingCache: HeaderDaten = {} und  {}", login_name, auth_token));
             let addr_with_params = format!("/getBooking/{}", buchungsnummer);
             log(format!("{}", addr_with_params));
-            log("TEST 10".to_string());
-            let res = match circuit_breaker.circuitBreakerRequestForWasmRust(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string()).await {
-              Ok(e) => log("ALLES OK BEI CIRUCIT BREAKER".to_string()),
-                Err(e) => log("ALLES NICHT OK BEI CIRUCIT BREAKER".to_string())
+            match circuit_breaker.circuitBreakerRequestForWasmRust(addr_with_params, login_name.to_string(), auth_token.to_string(), "GET".to_string()).await {
+              Ok(res) => {
+                  // Wandel bei Erfolg Response String in Booking Instanz um
+                  let response_json = res.as_string();
+                  let response_json_string;
+                  response_json_string = match response_json {
+                      Some(s) => s,
+                      None => return default_booking_result,
+                  };
+
+                  // Warum auch immer wird bool rückgabe auch als String zurückgegeben
+                  if response_json_string == "false".to_string() {
+
+                      log(format!("CircuitBreaker Request schlug fehl. HTTP Code war != 200"));
+                      return default_booking_result;
+                  }
+
+                  // Serialisiere den Reponse und wandel dann in Booking um
+                  let mut response_json_string_formatted = response_json_string.replace("[", "");
+                  response_json_string_formatted = response_json_string_formatted.replace("]", "");
+                  log(format!("Formattierter JSON String ist {:?}", response_json_string_formatted));
+                  log(format!("{}", response_json_string_formatted));
+                  let current_booking: Booking_Response = match serde_json::from_str(&response_json_string_formatted) {
+                      Ok(s) => s ,
+                      Err(e) => {
+                          log(format!("BookingCache: Kann Ergebniss nicht in Booking Instanz umwandeln wegen: {}", e));
+                          return default_booking_result;
+                      }
+                  };
+                  let dauerDerBuchung: i32 = current_booking.dauerDerBuchung.parse().unwrap();
+                  let cacheBooking: Booking = Booking::new(current_booking.buchungsNummer, current_booking.buchungsDatum,
+                                                           current_booking.loginName, dauerDerBuchung, current_booking.fahrzeugId,
+                                                           current_booking.preisNetto, current_booking.status, 0, 0);
+
+                  log(format!("BookingCache: CircuitBreaker Anfrage war erfolgreich {:?}", response_json_string_formatted));
+                  return cacheBooking
+              },
+
+                Err(e) => {
+                    log(format!("BookingCache: CircuitBreaker Anfrage an Buchungsverwaltung ist fehlgeschlagen"));
+                    return default_booking_result
+                }
             };
-            log(format!("{:?}", res));
-            log("TEST 11".to_string());
 
         }
 

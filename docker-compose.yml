@@ -12,8 +12,6 @@ services:
       - service
       - architecture
     build: ./rest_api
-    platform: wasi/wasm32
-    runtime: io.containerd.wasmedge.v1
     container_name: rest-api-trip1
     ports:
       - 8013:8000
@@ -26,8 +24,6 @@ services:
       - service
       - architecture
     build: ./rest_api
-    platform: wasi/wasm32
-    runtime: io.containerd.wasmedge.v1
     container_name: rest-api-trip2
     ports:
       - 8014:8000
@@ -40,8 +36,6 @@ services:
       - service
       - architecture
     build: ./rest_api
-    platform: wasi/wasm32
-    runtime: io.containerd.wasmedge.v1
     container_name: rest-api-trip3
     ports:
       - 8015:8000

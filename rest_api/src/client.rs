@@ -1,9 +1,8 @@
-use wasmedge_http_req::{request::Request, request::Method, uri::Uri};
+use http_req::{request::Request, request::Method, uri::Uri};
 // wird gebraucht um Namensauflösung zu machen !
-use wasmedge_wasi_socket::nslookup;
 use anyhow::anyhow;
-
-pub async fn make_request(host: &str, port: i32, path: String, login_name: String, auth_token: String, http_method: String) -> Result<(wasmedge_http_req::response::Response, String), anyhow::Error> {
+use std::net::{SocketAddr, ToSocketAddrs};
+pub async fn make_request(host: &str, port: i32, path: String, login_name: String, auth_token: String, http_method: String) -> Result<(http_req::response::Response, String), anyhow::Error> {
 
         let method;
         if http_method == "GET".to_string() {
@@ -14,10 +13,10 @@ pub async fn make_request(host: &str, port: i32, path: String, login_name: Strin
                 return Err(anyhow!("HTTP Client Method: {} not allowed", http_method));
         }
 
-        let addrs = nslookup(&host, "http")?;
-        let addr = format!("{}",addrs[0]);
-        let converted_addr = &addr[..(addr.len() - 2)];
-        let url = format!("http://{}{}{}", converted_addr, port, path);
+        // let addrs = host.to_socket_addrs().unwrap();;
+        // let addr = format!("{}", Some(addrs));
+        // let converted_addr = &addr[..(addr.len() - 2)];
+        let url = format!("http://{}{}{}", "0.0.0.0", port, path);
         println!("URL IST: {}", url);
 
         let converted_addr: Uri = Uri::try_from(&url[..])?;
